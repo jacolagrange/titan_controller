@@ -1,0 +1,36 @@
+{
+	"job":{
+		"name":"test",
+		"core_per_experiment":"1",
+		"mem_per_experiment":"4GB",
+		"vm_name":"vm_ubuntu2204"
+	},
+	"git":{
+		"sniper_branch":"jaime_IOVR",
+		"benchmark_branch":"bench-jaime"
+	},
+	"vm_mount":{
+		"input_mount":"None"
+	},
+	"sniper_parameters":{
+		"arguments": [
+			"-c", "cortex-a510-FSC",
+			"-d", ".",
+			"-n", "1",
+			"--use-va",
+			"-g", "--perf_model/core/rob_timer/in_order={in_order}",
+			"-g", "--perf_model/core/rob_timer/run_ahead/timer_type={timer}",
+			"-g", "--perf_model/core/rob_timer/run_ahead/micro_vector_size={micro_vector_size}",
+			"-g", "--perf_model/core/rob_timer/run_ahead/max_prefetch_dist={max_prefetch_dist}",
+			"-g", "--perf_model/core/rob_timer/run_ahead/scalar_per_vec_reg={max_prefetch_dist}",
+			"-g", "--perf_model/core/rob_timer/run_ahead/unrolling=false",
+			"-s", "stop-by-icount:200000000"
+		],
+		"param_values": {
+			"in_order":["true"],
+			"timer":["piggy-bagging"],
+			"micro_vector_size":[1],
+			"max_prefetch_dist":[8, 16, 32, 64, 128]
+		}
+	}
+}
