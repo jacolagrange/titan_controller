@@ -111,7 +111,7 @@ impl JobHandler{
         fill_template(&template, &dst_tmp , &repl_map);
 
         let exp_map = experiment.get_exp_arguments();
-        println!("{:?}", exp_map[0]);
+        println!("{:?}", exp_map[13]);
 
     }
 

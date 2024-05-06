@@ -95,13 +95,11 @@ impl Experiment{
         let mut keys: Vec<String> = Vec::new();
         for (key, val) in param_values.entries() {keys.push(key.to_string());}
         let param_combinations = create_all_param_values(&keys, &param_values);
-        
-
 
         for combination in param_combinations {
             let mut arg = arguments.clone();
             for (key, val) in std::iter::zip(keys.clone(), combination) {
-                arg = arg.replace(&*format!("{key}"), &val);
+                arg = arg.replace(&*format!("{{{key}}}"), &val);
             }
             sniper_args.push(arg);
         }
@@ -189,6 +187,9 @@ fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
             array.into_iter().map(|x| x.as_str().unwrap()).collect::<Vec<&str>>().join(separator)
         },
         json::JsonValue::Number(number) => {json_val.as_isize().unwrap().to_string()},
+        json::JsonValue::String(string) => {string.clone()},
+        json::JsonValue::Short(short) => {short.as_str().to_string()}
+        json::JsonValue::Boolean(bool_val) => {bool_val.to_string()}
         _ => {String::new()}
     }
 }
