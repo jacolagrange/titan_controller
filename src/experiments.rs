@@ -81,10 +81,114 @@ impl Experiment{
     }
 
     fn get_number_configs(&self) -> usize {
-        let mut nr_conf: usize = 0;
+        let mut nr_conf: usize = 1;
         for (_, vals) in self.exp["sniper_parameters"]["param_values"].entries(){
-            nr_conf += vals.len();
+            nr_conf *= vals.len();
         }
         return nr_conf;
+    }
+
+    fn get_sniper_arguments(&self) -> Vec<String> {
+        let mut sniper_args = Vec::new();
+        let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
+        let param_values = &self.exp["sniper_parameters"]["param_values"];
+        let mut keys: Vec<String> = Vec::new();
+        for (key, val) in param_values.entries() {keys.push(key.to_string());}
+        let param_combinations = create_all_param_values(&keys, &param_values);
+        
+
+
+        for combination in param_combinations {
+            let mut arg = arguments.clone();
+            for (key, val) in std::iter::zip(keys.clone(), combination) {
+                arg = arg.replace(&*format!("{key}"), &val);
+            }
+            sniper_args.push(arg);
+        }
+        return sniper_args;
+    }
+
+    pub fn get_exp_arguments(&self) -> Vec<HashMap<&str, String>> {
+        let mut exp_arguments = Vec::new();
+        let sniper_args = self.get_sniper_arguments();
+        for benchmark_suite in self.bench["suites"].members(){
+            let suite_path = benchmark_suite["suite_path"].as_str().unwrap();
+            let extra_sniper_args = json_value_to_string(&benchmark_suite["sniper_args"], " ");
+            let binary = benchmark_suite["type"].as_str().unwrap() == "binaries";
+
+            for benchmark in benchmark_suite["benchmarks"].members(){
+                let benchmark_path = if benchmark.has_key("bench_path") {
+                    format!("{suite_path}/{}",benchmark["bench_path"].as_str().unwrap())
+                } else {
+                    suite_path.to_string()
+                };
+
+                let benchmark_build = if benchmark.has_key("build_cmd") {
+                    json_value_to_string(&benchmark["build_cmd"], " ")
+                } else {
+                    String::new()
+                };
+
+                let setup_cmd = if benchmark.has_key("setup_cmd") {
+                    json_value_to_string(&benchmark["setup_cmd"], "\n")
+                } else {
+                    String::new()
+                };
+
+                let benchmark_str = if binary {
+                    let binary_name = benchmark["binary"].as_str().unwrap();
+                    let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
+                    format!("-- {benchmark_path}/{binary_name} {benchmark_args}")
+                } else {
+                    let trace_names = json_value_to_string(&benchmark["traces"], ",");
+                    format!("--traces={trace_names}")
+                };
+
+                for sniper_arg in &sniper_args {
+                    let all_arguments = sniper_arg.to_owned() + " " + &extra_sniper_args + " " + &benchmark_str;
+                    let args = HashMap::from([
+                        ("<BENCH_DIR>", benchmark_path.clone()),
+                        ("<BUILD_COMMAND>", benchmark_build.clone()),
+                        ("<SETUP_CMD>", setup_cmd.clone()),
+                        ("<ARGUMENTS>", all_arguments)
+                    ]);
+                    exp_arguments.push(args);
+                }
+            }
+        }
+        return exp_arguments;
+    }
+}
+
+fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
+    if keys.is_empty() {return Vec::new();}
+
+    let key = &keys[0];
+    let mut combinations = Vec::new();
+    if keys.len() == 1 {
+        for key_value in values[key].members() {
+            combinations.push(vec![json_value_to_string(&key_value, "")]);
+        }
+    } else {
+        let next_values = create_all_param_values(&keys[1..], values);
+
+        for key_value in values[key].members() {
+            for next_value in &next_values {
+                let mut val = vec![json_value_to_string(&key_value, "")];
+                val.append(&mut next_value.clone());
+                combinations.push(val);
+            }
+        }
+    }
+    return combinations;
+}
+
+fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
+    match json_val {
+        json::JsonValue::Array(array) => {
+            array.into_iter().map(|x| x.as_str().unwrap()).collect::<Vec<&str>>().join(separator)
+        },
+        json::JsonValue::Number(number) => {json_val.as_isize().unwrap().to_string()},
+        _ => {String::new()}
     }
 }

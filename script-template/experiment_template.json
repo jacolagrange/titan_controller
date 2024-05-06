@@ -15,7 +15,6 @@
 	"sniper_parameters":{
 		"arguments": [
 			"-c", "cortex-a510-FSC",
-			"-d", ".",
 			"-n", "1",
 			"--use-va",
 			"-g", "--perf_model/core/rob_timer/in_order={in_order}",

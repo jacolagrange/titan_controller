@@ -1,11 +1,9 @@
 #!/bin/bash
-
-# MODIFIED FROM: http://www.kfirlavi.com/blog/2012/11/06/elegant-locking-of-bash-program/
-readonly LOCK_FD=200
-
 readonly BENCHMARKS_DIR="/mnt/benchmarks"
 readonly RUN_DIR="/mnt/run"
 readonly SNIPER_DIR="/mnt/sniper"
+readonly INPUT_DIR="/mnt/input"
+readonly TRACES_DIR="/mnt/traces"
 
 export SNIPER_ROOT=${SNIPER_DIR}
 export GRAPHITE_ROOT=${SNIPER_DIR}
@@ -14,10 +12,8 @@ export BENCHMARKS_ROOT=${BENCHMARKS_DIR}
 export OMP_WAIT_POLICY=active
 
 lock() {
-    local FD=${2:-$LOCK_FD}
     local LOCKFILE_DIR=$(pwd)
     local BUILD_LOCK=${LOCKFILE_DIR}/make.lock
-    local RUN_LOCK=${RUN_DIR}/make.lock
 
     if [[ $1 == "x" ]]; then
       echo "$(date +'%H:%M:%S %d-%m-%Y') -- Attempting to lock the directory ${LOCKFILE_DIR}"
@@ -30,10 +26,8 @@ lock() {
         sleep 10
       done
       echo "$(date +'%H:%M:%S %d-%m-%Y') -- Acquired lock on ${LOCKFILE_DIR}"
-      mkdir ${RUN_LOCK} 2> /dev/null
     else
       rm -r ${BUILD_LOCK}
-      rm -r ${RUN_LOCK}
       echo "$(date +'%H:%M:%S %d-%m-%Y') -- Unlocked directory ${LOCKFILE_DIR}"
     fi
     return 0
@@ -74,14 +68,16 @@ date > ${RUN_DIR}/started
 
 build ${SNIPER_DIR} "make" make_sniper.out make_sniper.err
 
-if <BUILD_BENCHMARKS>; then
+# If something in Benchmark directory, build it.
+if [ "$(ls -A ${BENCHMARK_DIR})" ]; then
     build ${BENCHMARKS_DIR}/<BENCH_DIR> <BUILD_COMMAND> make_benchmarks.out make_benchmarks.err
 fi
 
 # run simulation
 cd ${RUN_DIR}
 # MODIFY SNIPER COMMAND LINE HERE
-<EXPORT> ${SNIPER_DIR}/run-sniper -d ${RUN_DIR} <ARGUMENTS> <BENCHMARK>
+<SETUP_CMD>
+${SNIPER_DIR}/run-sniper -d ${RUN_DIR} <ARGUMENTS>
 
 # finish
 date > ${RUN_DIR}/finished

@@ -103,11 +103,15 @@ impl JobHandler{
         let experiment_path = Path::new("script-template/experiment_template.json");
         let benchmark_path = Path::new("script-template/benchmark_template.json");
         let mut experiment = Experiment::new(&experiment_path, &benchmark_path);
+        let repl_map = experiment.get_job_arguments();
 
         let template = Path::new("script-template/job.sh");
         let dst_tmp = Path::new("output_job.sh");
 
         fill_template(&template, &dst_tmp , &repl_map);
+
+        let exp_map = experiment.get_exp_arguments();
+        println!("{:?}", exp_map[0]);
 
     }
 
