@@ -105,14 +105,15 @@ impl JobHandler{
         let mut experiment = Experiment::new(&experiment_path, &benchmark_path);
         let repl_map = experiment.get_job_arguments();
 
-        let template = Path::new("script-template/job.sh");
+        let template_job = Path::new("script-template/job.sh");
         let dst_tmp = Path::new("output_job.sh");
 
-        fill_template(&template, &dst_tmp , &repl_map);
+        fill_template(&template_job, &dst_tmp , &repl_map);
 
-        let exp_map = experiment.get_exp_arguments();
-        println!("{:?}", exp_map[13]);
-
+        let exp_map_list = experiment.get_exp_arguments();
+        let template_vm = Path::new("script-template/execute_Sniper.sh");
+        let dst_tmp2 = Path::new("output_execute.sh");
+        fill_template(&template_vm, &dst_tmp2, &exp_map_list[0]);
     }
 
     // pub fn submit_job(&self, scripts_path: Vec<&Path>) -> String{

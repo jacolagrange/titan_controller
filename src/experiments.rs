@@ -136,9 +136,13 @@ impl Experiment{
                 let benchmark_str = if binary {
                     let binary_name = benchmark["binary"].as_str().unwrap();
                     let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
-                    format!("-- {benchmark_path}/{binary_name} {benchmark_args}")
+                    format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_name} {benchmark_args}")
                 } else {
-                    let trace_names = json_value_to_string(&benchmark["traces"], ",");
+                    let mut trace_vec = Vec::new();
+                    for trace_name in benchmark["traces"].members(){
+                        trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", trace_name.as_str().unwrap()));
+                    }
+                    let trace_names = trace_vec.join(",");
                     format!("--traces={trace_names}")
                 };
 
