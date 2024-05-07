@@ -35,14 +35,25 @@ impl Experiment{
         let job_vals = &self.exp["job"];
         HashMap::from([
             // ("<ACCOUNT>", String::from("jdiroela")),
-            ("<JOB>",       String::from(job_vals["name"].as_str().unwrap())),
-            ("<CORES>",     String::from(job_vals["core_per_experiment"].as_str().unwrap())),
-            ("<MEMORY>",    String::from(job_vals["mem_per_experiment"].as_str().unwrap())),
+            ("<JOB>",       json_value_to_string(&job_vals["name"],"")),
+            ("<CORES>",     json_value_to_string(&job_vals["core_per_experiment"],"")),
+            ("<MEMORY>",    self.get_tot_memory().to_string()),
             ("<TASKS>",     total_jobs.to_string()),
-            ("<VM_NAME>",   String::from(job_vals["vm_name"].as_str().unwrap())),
+            ("<VM_NAME>",   json_value_to_string(&job_vals["vm_name"],"")),
+            ("<VM_NAME>",   json_value_to_string(&job_vals["vm_name"],"")),
             ("<GIT-REPOSITORIES>", git_repos),
             ("<MOUNTS>",    mounts),
         ])
+    }
+
+    fn get_tot_memory(&self) -> usize {
+        let core_str = json_value_to_string(&self.exp["job"]["core_per_experiment"],"");
+        let mem_per_core_str = json_value_to_string(&self.exp["job"]["mem_per_core"],"");
+
+        let core_nr: usize = core_str.parse().unwrap();
+        let mem_per_core: usize = mem_per_core_str.parse().unwrap();
+
+        core_nr * mem_per_core
     }
 
     fn get_git_repos(&self) -> String {
@@ -110,13 +121,13 @@ impl Experiment{
         let mut exp_arguments = Vec::new();
         let sniper_args = self.get_sniper_arguments();
         for benchmark_suite in self.bench["suites"].members(){
-            let suite_path = benchmark_suite["suite_path"].as_str().unwrap();
+            let suite_path = json_value_to_string(&benchmark_suite["suite_path"],"");
             let extra_sniper_args = json_value_to_string(&benchmark_suite["sniper_args"], " ");
-            let binary = benchmark_suite["type"].as_str().unwrap() == "binaries";
+            let binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
 
             for benchmark in benchmark_suite["benchmarks"].members(){
                 let benchmark_path = if benchmark.has_key("bench_path") {
-                    format!("{suite_path}/{}",benchmark["bench_path"].as_str().unwrap())
+                    format!("{suite_path}/{}", json_value_to_string(&benchmark["bench_path"],""))
                 } else {
                     suite_path.to_string()
                 };
@@ -134,13 +145,13 @@ impl Experiment{
                 };
 
                 let benchmark_str = if binary {
-                    let binary_name = benchmark["binary"].as_str().unwrap();
+                    let binary_name = json_value_to_string(&benchmark["binary"],"");
                     let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
                     format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_name} {benchmark_args}")
                 } else {
                     let mut trace_vec = Vec::new();
                     for trace_name in benchmark["traces"].members(){
-                        trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", trace_name.as_str().unwrap()));
+                        trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_name,"")));
                     }
                     let trace_names = trace_vec.join(",");
                     format!("--traces={trace_names}")
@@ -188,7 +199,7 @@ fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<
 fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
     match json_val {
         json::JsonValue::Array(array) => {
-            array.into_iter().map(|x| x.as_str().unwrap()).collect::<Vec<&str>>().join(separator)
+            array.into_iter().map(|x| json_value_to_string(x,"")).collect::<Vec<String>>().join(separator)
         },
         json::JsonValue::Number(number) => {json_val.as_isize().unwrap().to_string()},
         json::JsonValue::String(string) => {string.clone()},
