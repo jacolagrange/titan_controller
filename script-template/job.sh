@@ -11,6 +11,7 @@
 # #SBATCH --tmp=15G #need to update the slurm.conf to be able to reserve some TmpDisk space
 
 VM_original=<VM_NAME>
+job_suffix=${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
 
 check_vm_exists() {
 	var=`VBoxManage list vms | grep -c "${VM_original}"`
@@ -38,7 +39,6 @@ check_and_wait_for_disk_space() {
 wrap_up() {
 	echo "Copying results."
 	results_dir_exists=$1
-	job_suffix=${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
 	if [ $results_dir_exists -eq 1 ]; then
 		mv ~/stdout_${job_suffix}.txt .
 		mv ~/stderr_${job_suffix}.txt .
@@ -151,7 +151,7 @@ check_and_wait_for_disk_space
 <GIT-REPOSITORIES>
 
 # setup a temporary directory
-job_dir="running/job_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+job_dir="running/job_${job_suffix}"
 echo "Creating temporary directory ${job_dir}."
 mkdir -p ${job_dir}
 if [ $? -ne 0 ]; then
@@ -168,8 +168,8 @@ working_dir=`pwd`
 
 # copy the job and execute script from the command node, implement while sleep to make sure they are already copied
 echo "Copying execution files."
-copy_with_retry_from_bacchus ~/jobs/submitted/job_${SLURM_ARRAY_JOB_ID}.sh job.sh
-copy_with_retry_from_bacchus ~/jobs/submitted/execute_${SLURM_ARRAY_JOB_ID}.sh execute.sh
+copy_with_retry_from_bacchus ~/jobs/submitted/job_${job_suffix}.sh job.sh
+copy_with_retry_from_bacchus ~/jobs/submitted/execute_${job_suffix}.sh execute.sh
 
 # clone relevant VM and register
 echo "Cloning and setting up VM."

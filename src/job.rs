@@ -100,20 +100,52 @@ impl JobHandler{
     }
 
     pub fn submit_job(&self) {
+        //Create some tmp folder to put the scripts into
+        let temp_path = Path::new("/tmp/titan_controller");
+        if ! temp_path.is_dir(){
+            fs::create_dir(temp_path);
+        }
+
+        //Obtain a unique hash from the server
+        let hash = &ssh::get_hash_titan(1)[0];
+
+        //Get experiments parameters
         let experiment_path = Path::new("script-template/experiment_template.json");
         let benchmark_path = Path::new("script-template/benchmark_template.json");
         let mut experiment = Experiment::new(&experiment_path, &benchmark_path);
-        let repl_map = experiment.get_job_arguments();
+        let mut repl_map = experiment.get_job_arguments();
+        repl_map.insert("<ACCOUNT>", self.creds.username.clone());
 
+        //Create job file
         let template_job = Path::new("script-template/job.sh");
-        let dst_tmp = Path::new("output_job.sh");
+        let job_file_name = String::from(format!("job_{hash}.sh"));
+        let job_file_path = Path::new(&job_file_name);
+        let dst_job_path = temp_path.join(&job_file_path);
+        fill_template(&template_job, &dst_job_path , &repl_map);
+        let titan_path = Path::new("/home/slurmslave/jobs/submitted/.").join(&job_file_path);
+        ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_path.to_str().unwrap());
+        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_path.to_str().unwrap()));
 
-        fill_template(&template_job, &dst_tmp , &repl_map);
+        if stdout.contains("Submitted batch job") {
+            println!("Job submission produced \nOutput:\n{stdout}\n\nErr:\n{stderr}");
+            let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
 
-        let exp_map_list = experiment.get_exp_arguments();
-        let template_vm = Path::new("script-template/execute_Sniper.sh");
-        let dst_tmp2 = Path::new("output_execute.sh");
-        fill_template(&template_vm, &dst_tmp2, &exp_map_list[0]);
+            let temp_exp_path = temp_path.join(Path::new(&job_nr));
+            if ! temp_exp_path.is_dir() { fs::create_dir(&temp_exp_path); }
+
+            let template_vm = Path::new("script-template/execute_Sniper.sh");
+            let exp_map_list = experiment.get_exp_arguments();
+            for (idx, exp_map) in exp_map_list.iter().enumerate() {
+                let task_id = idx + 1;
+                let exp_name = String::from(format!("execute_{job_nr}_{task_id}.sh"));
+                let exp_file_path = Path::new(&exp_name);
+                let dst_exp_path = temp_exp_path.join(&exp_file_path);
+                fill_template(&template_vm, &dst_exp_path, &exp_map);
+            }
+            ssh::send_files(&temp_exp_path.to_str().unwrap(), &titan_path.to_str().unwrap());
+        } else {
+            eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
+        }
     }
 
     // pub fn submit_job(&self, scripts_path: Vec<&Path>) -> String{

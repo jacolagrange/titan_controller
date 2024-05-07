@@ -29,12 +29,13 @@ impl Experiment{
     }
 
     pub fn get_job_arguments(&self) -> HashMap<&str, String> {
-        let total_jobs: usize = self.get_number_benchmarks() * self.get_number_configs();
+        let mut total_jobs: usize = self.get_number_benchmarks() * self.get_number_configs();
+        total_jobs = 1;
         let git_repos: String = self.get_git_repos();
         let mounts: String = self.get_vm_mounts();
         let job_vals = &self.exp["job"];
         HashMap::from([
-            // ("<ACCOUNT>", String::from("jdiroela")),
+            // ("<ACCOUNT>",   String::new()),
             ("<JOB>",       json_value_to_string(&job_vals["name"],"")),
             ("<CORES>",     json_value_to_string(&job_vals["core_per_experiment"],"")),
             ("<MEMORY>",    self.get_tot_memory().to_string()),
@@ -122,7 +123,7 @@ impl Experiment{
         let sniper_args = self.get_sniper_arguments();
         for benchmark_suite in self.bench["suites"].members(){
             let suite_path = json_value_to_string(&benchmark_suite["suite_path"],"");
-            let extra_sniper_args = json_value_to_string(&benchmark_suite["sniper_args"], " ");
+            let bench_sniper_args = json_value_to_string(&benchmark_suite["sniper_args"], " ");
             let binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
 
             for benchmark in benchmark_suite["benchmarks"].members(){
@@ -158,7 +159,7 @@ impl Experiment{
                 };
 
                 for sniper_arg in &sniper_args {
-                    let all_arguments = sniper_arg.to_owned() + " " + &extra_sniper_args + " " + &benchmark_str;
+                    let all_arguments = sniper_arg.to_owned() + " " + &bench_sniper_args + " " + &benchmark_str;
                     let args = HashMap::from([
                         ("<BENCH_DIR>", benchmark_path.clone()),
                         ("<BUILD_COMMAND>", benchmark_build.clone()),

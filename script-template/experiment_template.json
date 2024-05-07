@@ -1,8 +1,8 @@
 {
 	"job":{
 		"name":"test",
-		"core_per_experiment":"1",
-		"mem_per_core":"2048",
+		"core_per_experiment":1,
+		"mem_per_core":2048,
 		"vm_name":"vm_ubuntu2204"
 	},
 	"git":{

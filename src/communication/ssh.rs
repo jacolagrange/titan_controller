@@ -13,7 +13,7 @@ pub fn send_command(command: &str) -> (String, String){
 }
 
 pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
-    let full_dst = format!("titan:{}", dst_path);
+    let full_dst = format!("titan:{dst_path}");
     let output = Command::new("scp")
         .args(["-r", src_path, &full_dst])
         .output()?;
@@ -24,7 +24,7 @@ pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> 
 }
 
 pub fn get_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
-    let full_src = format!("titan:{}", src_path);
+    let full_src = format!("titan:{src_path}");
     let output = Command::new("scp")
         .args(["-r", &full_src, dst_path])
         .output()?;
