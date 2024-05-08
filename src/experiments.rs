@@ -79,6 +79,7 @@ impl Experiment{
         //Mount additional repos
         for (mnt_name, host_path) in self.exp["vm_mount"].entries() {
             let host_path_str = host_path.as_str().unwrap();
+            if host_path_str.to_lowercase() == "none" {continue;}
             write!(vm_mounts, "mount_vbox {mnt_name} {host_path}\n");
         }
         return vm_mounts;

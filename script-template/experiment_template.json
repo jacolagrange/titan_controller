@@ -6,8 +6,8 @@
 		"vm_name":"vm_ubuntu2204"
 	},
 	"git":{
-		"sniper_branch":"jaime_IOVR",
-		"benchmark_branch":"bench-jaime"
+		"sniper_branch":"jaime-IOVR",
+		"benchmarks_branch":"bench-jaime"
 	},
 	"vm_mount":{
 		"input_mount":"None"

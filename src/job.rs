@@ -122,9 +122,12 @@ impl JobHandler{
         let job_file_path = Path::new(&job_file_name);
         let dst_job_path = temp_path.join(&job_file_path);
         fill_template(&template_job, &dst_job_path , &repl_map);
-        let titan_path = Path::new("/home/slurmslave/jobs/submitted/.").join(&job_file_path);
-        ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_path.to_str().unwrap());
-        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_path.to_str().unwrap()));
+        let titan_path = Path::new("/home/slurmslave/jobs/submitted/.");
+        let titan_job_path = titan_path.join(&job_file_path);
+        ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
+        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
+        //Sbatch is send, the job-file is not needed anymore
+        ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()));
 
         if stdout.contains("Submitted batch job") {
             println!("Job submission produced \nOutput:\n{stdout}\n\nErr:\n{stderr}");
@@ -142,7 +145,7 @@ impl JobHandler{
                 let dst_exp_path = temp_exp_path.join(&exp_file_path);
                 fill_template(&template_vm, &dst_exp_path, &exp_map);
             }
-            ssh::send_files(&temp_exp_path.to_str().unwrap(), &titan_path.to_str().unwrap());
+            ssh::send_files(&temp_exp_path.join(Path::new("*")).to_str().unwrap(), &titan_path.to_str().unwrap());
         } else {
             eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
         }

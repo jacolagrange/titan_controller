@@ -71,6 +71,7 @@ copy_with_retry_from_bacchus() {
 	while true; do
 		scp bacchus:$submitted_file $rename_to > /dev/null 2>&1
 		if [ $? -eq 0 ]; then
+			ssh bacchus "rm $submitted_file"
 			break
 		else
 			sleep 1
@@ -96,7 +97,7 @@ checkout_git_repo() {
 	# check if branch-name argument was a git id or an actual branch
 	DETACHED=`git branch | grep -c detached`
 	GIT_ID=`git rev-parse HEAD`
-	declare ${1^^}_GIT_ID=$GIT_ID
+	declare -g ${1^^}_GIT_ID=$GIT_ID
 	echo "Branch git-id is $GIT_ID."
 	if [ ! -d ../$GIT_ID ]; then
 		# make a directory with the git id as name and copy the branch source code there
@@ -116,10 +117,12 @@ checkout_git_repo() {
 
 	rm -r "$lockdir"
 	trap - SIGTERM #finished here. (not ideal, could still have some issues, but good enough?)
+	cd ~
 }
 
 #Arguments: mount_name host-path
 mount_vbox() {
+	echo "Mounting $1 on hostpath $2"
 	VBoxManage sharedfolder add "${VM_name}" --name $1 --hostpath $2
 	VBoxManage setextradata "${VM_name}" VBoxInternal2/SharedFoldersEnableSymlinksCreate/$1 1
 }
@@ -168,7 +171,8 @@ working_dir=`pwd`
 
 # copy the job and execute script from the command node, implement while sleep to make sure they are already copied
 echo "Copying execution files."
-copy_with_retry_from_bacchus ~/jobs/submitted/job_${job_suffix}.sh job.sh
+# copy_with_retry_from_bacchus ~/jobs/submitted/job_${job_suffix}.sh job.sh
+cp $0 job.sh
 copy_with_retry_from_bacchus ~/jobs/submitted/execute_${job_suffix}.sh execute.sh
 
 # clone relevant VM and register

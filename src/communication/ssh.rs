@@ -14,9 +14,11 @@ pub fn send_command(command: &str) -> (String, String){
 
 pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
     let full_dst = format!("titan:{dst_path}");
-    let output = Command::new("scp")
-        .args(["-r", src_path, &full_dst])
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(["scp", "-r", src_path, &full_dst].join(" "))
         .output()?;
+    println!("scp output\n{:?} \nerror\n{:?}\n", String::from_utf8(output.stdout.clone()).unwrap(), String::from_utf8(output.stderr.clone()).unwrap());
     if output.stderr.len() > 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }

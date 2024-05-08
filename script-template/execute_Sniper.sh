@@ -69,7 +69,7 @@ date > ${RUN_DIR}/started
 build ${SNIPER_DIR} "make" make_sniper.out make_sniper.err
 
 # If something in Benchmark directory, build it.
-if [ "$(ls -A ${BENCHMARK_DIR})" ]; then
+if [ -n "$(ls -A ${BENCHMARKS_DIR} 2>/dev/null)" ]; then
     build ${BENCHMARKS_DIR}/<BENCH_DIR> <BUILD_COMMAND> make_benchmarks.out make_benchmarks.err
 fi
 
