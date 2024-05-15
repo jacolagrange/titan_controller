@@ -1,5 +1,4 @@
 mod communication;
-use communication::ssh;
 mod credentials;
 use credentials::Credentials;
 mod stat;
@@ -8,7 +7,7 @@ use job::JobHandler;
 mod fill_template;
 mod experiments;
 
-use clap::{Parser, ArgGroup, error::ErrorKind, CommandFactory};
+use clap::{Parser, ArgGroup};
 use std::str::FromStr;
 use std::path::Path;
 

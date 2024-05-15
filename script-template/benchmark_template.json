@@ -2,6 +2,9 @@
 	{
 		"suite":"gaps_traces",
 		"type":"traces",
+		"vm_mount":{
+			"traces_mount":"/home/slurmslave/traces/sift"
+		},
 		"suite_path":"gaps_sift_traces_with_gp_reg_values_1B",
 		"sniper_args":[
 			"--trace-with-reg",
@@ -20,6 +23,9 @@
 	{
 		"suite":"irregular_binaries",
 		"type":"binaries",
+		"git":{
+			"benchmarks_branch":"bench-jaime"
+		},
 		"suite_path":"irregular",
 		"sniper_args":[
 			"--trace-with-reg",

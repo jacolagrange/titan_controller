@@ -1,5 +1,4 @@
 use crate::communication::ssh;
-use crate::credentials::Credentials;
 
 use std::path::Path;
 use std::vec::Vec;
@@ -14,7 +13,7 @@ pub fn print_vms() {
 pub fn upload_vm(vm_path: &Path) {
     let destination = Path::new("/home/slurmaslave/virtualbox/");
     println!("Uploading VM to bacchus");
-    ssh::send_files(vm_path.to_str().unwrap(), destination.to_str().unwrap());
+    let _ = ssh::send_files(vm_path.to_str().unwrap(), destination.to_str().unwrap());
     println!("Distributing to other nodes");
     let command = format!("/home/slurmadmin/scripts/distribute_VM.py {}/{}", destination.to_str().unwrap(), vm_path.file_name().unwrap().to_str().unwrap());
     ssh::send_command(&command);
@@ -76,7 +75,7 @@ pub fn upload_trace(trace_path: &Path) {
     }
     let destination = Path::new("/home/slurmaslave/traces/sift");
     println!("Uploading trace to bacchus");
-    ssh::send_files(trace_path.to_str().unwrap(), destination.to_str().unwrap());
+    let _ = ssh::send_files(trace_path.to_str().unwrap(), destination.to_str().unwrap());
     println!("Distributing to other nodes");
     let command = format!("/home/slurmadmin/scripts/distribute_VM.py {}/{}", destination.to_str().unwrap(), trace_path.file_name().unwrap().to_str().unwrap());
     ssh::send_command(&command);

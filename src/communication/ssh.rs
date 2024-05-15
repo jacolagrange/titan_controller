@@ -1,5 +1,3 @@
-use std::io::{Read, Write};
-use std::path::Path;
 use std::process::Command;
 
 pub fn send_command(command: &str) -> (String, String){
