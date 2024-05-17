@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::collections::HashMap;
 
-pub fn fill_template(template_path: &Path, dst_path: &Path, replacement_map: &HashMap<&str, String>){
+pub fn fill_template(template_path: &Path, dst_path: &Path, replacement_map: &HashMap<String, String>){
     let mut template_file = File::open(template_path).unwrap();
     let mut data = String::new();
     let _ = template_file.read_to_string(&mut data);

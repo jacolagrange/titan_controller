@@ -1,21 +1,51 @@
 use json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::Read;
 use std::fmt::Write;
 use std::collections::HashMap;
 
-pub struct ExperimentArguments<'a> {
-    pub job_arguments: HashMap<&'a str, String>,
-    pub benchmark_arguments: Vec<HashMap<&'a str, String>>
+use serde::{Serialize, Deserialize};
+
+/*
+ * A Job is a the whole collections of all the different experiments (There is one job / benchmark
+ * sutie, because of different mounting and git requirements.)
+ */
+#[derive(Debug)]
+pub struct JobArgument {
+    pub meta_arguments: HashMap<String, String>,
+    pub experiment_arguments: Vec<ExperimentArgument>
 }
 
-pub struct Experiment{
+/*
+ * An experiment is defined for a given (sniper) configuration with defined parameters
+ */
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExperimentArgument{
+    pub exp_meta_info_path: PathBuf,
+    pub variable_sniper_parameters: HashMap<String, String>,
+    pub benchmarks: Vec<BenchmarkArgument>
+}
+
+
+/*
+ * A Benchmark is the based on the Experiment, all the inputs it needs to be run with
+ */ 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BenchmarkArgument{
+    pub arguments: HashMap<String, String>,
+    pub benchmark_name: String,
+    pub run_idx: usize
+}
+
+
+#[derive(Debug)]
+pub struct ParseExperiment{
     exp: json::JsonValue,
     bench: json::JsonValue
 }
 
-impl Experiment{
+impl ParseExperiment{
     pub fn new(exp_json_path: &Path, bench_json_path: &Path) -> Self{
         let mut exp_json_file = File::open(exp_json_path).unwrap();
         let mut exp_json_data = String::new();
@@ -32,15 +62,12 @@ impl Experiment{
         return Self {exp, bench}
     }
 
-    pub fn get_arguments(&self) -> Vec<ExperimentArguments> {
+    pub fn get_arguments(&self) -> Vec<JobArgument> {
         let mut job_args = Vec::new();
         let job_git_repos: String = self.get_git_repos(&self.exp);
         let job_mounts: String = self.get_vm_mounts(&self.exp);
 
         for suite in self.bench["suites"].members() {
-            let mut total_jobs: usize = suite["benchmarks"].len() * self.get_number_configs();
-            total_jobs = 1; //debug
-
             let mut git_repos: String = self.get_git_repos(&suite);
             git_repos.push_str(&job_git_repos);
 
@@ -48,23 +75,33 @@ impl Experiment{
             mounts.push_str(&job_mounts);
 
             let job_vals = &self.exp["job"];
+
+            let nr_runs: usize = job_vals["runs"].as_usize().unwrap();
+            let total_jobs: usize = suite["benchmarks"].len() * self.get_number_configs() * nr_runs;
+
             let job_name = json_value_to_string(&job_vals["name"],"") + &format!("_{}", suite["suite"]);
-            let args = HashMap::from([
+
+            let meta_arguments = HashMap::from([
                 // ("<ACCOUNT>",   String::new()),
-                ("<JOB>",       job_name),
-                ("<CORES>",     json_value_to_string(&job_vals["core_per_experiment"],"")),
-                ("<MEMORY>",    self.get_tot_memory().to_string()),
-                ("<TASKS>",     total_jobs.to_string()),
-                ("<VM_NAME>",   json_value_to_string(&job_vals["vm_name"],"")),
-                ("<GIT-REPOSITORIES>", git_repos),
-                ("<MOUNTS>",    mounts),
+                (String::from("<JOB>"),       job_name),
+                (String::from("<CORES>"),     json_value_to_string(&job_vals["core_per_experiment"],"")),
+                (String::from("<MEMORY>"),    self.get_tot_memory().to_string()),
+                (String::from("<TASKS>"),     total_jobs.to_string()),
+                (String::from("<VM_NAME>"),   json_value_to_string(&job_vals["vm_name"],"")),
+                (String::from("<GIT-REPOSITORIES>"), git_repos),
+                (String::from("<MOUNTS>"),    mounts),
             ]);
 
-            let bench_args = self.get_exp_arguments(&suite);
-            job_args.push(ExperimentArguments{job_arguments: args, benchmark_arguments: bench_args});
+            let experiment_arguments = self.get_exp_arguments(&suite, nr_runs);
+            job_args.push(JobArgument{meta_arguments, experiment_arguments});
         }
         return job_args;
     }
+
+
+    /*
+     * Helper function to fill the JOB/Meta arguments
+     */
 
     fn get_tot_memory(&self) -> usize {
         let core_str = json_value_to_string(&self.exp["job"]["core_per_experiment"],"");
@@ -119,31 +156,47 @@ impl Experiment{
         return nr_conf;
     }
 
-    fn get_sniper_arguments(&self) -> Vec<String> {
-        let mut sniper_args = Vec::new();
-        let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
-        let param_values = &self.exp["sniper_parameters"]["param_values"];
-        let mut keys: Vec<String> = Vec::new();
-        for (key, _) in param_values.entries() {keys.push(key.to_string());}
-        let param_combinations = create_all_param_values(&keys, &param_values);
+    /*
+     * Function to process all the arguments for the benchmark themselves
+     */
+    fn get_exp_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<ExperimentArgument> {
+        let mut exp_arguments: Vec<ExperimentArgument> = Vec::new();
+        let sniper_arg_maps = self.get_sniper_arguments();
+        let mut sniper_str_arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
+        sniper_str_arguments.push_str(" ");
+        let benchmarks_arguments = self.get_benchmark_arguments(&benchmark_suite, nr_runs);
 
-        for combination in param_combinations {
-            let mut arg = arguments.clone();
-            for (key, val) in std::iter::zip(keys.clone(), combination) {
-                arg = arg.replace(&*format!("{{{key}}}"), &val);
+        let host_job_exp_meta_info_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+        let host_job_exp_meta_info_path = Path::new(&host_job_exp_meta_info_path_str);
+        
+        for sniper_arg in &sniper_arg_maps {
+            let mut sniper_str_arg: String = sniper_str_arguments.clone();
+            for (key, val) in sniper_arg {sniper_str_arg = sniper_str_arg.replace(&*format!("{{{key}}}"), &val);}
+
+            let mut benchmarks = benchmarks_arguments.clone();
+            for benchmark in &mut benchmarks {
+                benchmark.arguments.get_mut("<ARGUMENTS>").unwrap().insert_str(0, &sniper_str_arg);
             }
-            sniper_args.push(arg);
+
+            let sniper_dir_name: String = sniper_arg.clone().into_values().collect::<Vec<String>>().join("_");
+            let exp_meta_info_path = host_job_exp_meta_info_path.join(sniper_dir_name);
+            
+            exp_arguments.push(
+                ExperimentArgument{
+                    exp_meta_info_path,
+                    variable_sniper_parameters: sniper_arg.clone(),
+                    benchmarks
+                });
         }
-        return sniper_args;
+        return exp_arguments;
     }
 
-    fn get_exp_arguments(&self, benchmark_suite: &json::JsonValue) -> Vec<HashMap<&str, String>> {
-        let mut exp_arguments = Vec::new();
-        let sniper_args = self.get_sniper_arguments();
-        
+    fn get_benchmark_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<BenchmarkArgument> {
+        let mut benchmark_arguments = Vec::new();
+
+        let benchmark_parameters = json_value_to_string(&benchmark_suite["sniper_args"], " ");
+        let is_binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
         let suite_path = json_value_to_string(&benchmark_suite["suite_path"],"");
-        let bench_sniper_args = json_value_to_string(&benchmark_suite["sniper_args"], " ");
-        let binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
 
         for benchmark in benchmark_suite["benchmarks"].members(){
             let benchmark_path = if benchmark.has_key("bench_path") {
@@ -164,34 +217,62 @@ impl Experiment{
                 String::new()
             };
 
-            let benchmark_str = if binary {
-                let binary_name = json_value_to_string(&benchmark["binary"],"");
+            let benchmark_str = if is_binary {
+                let binary_str = json_value_to_string(&benchmark["binary"],"");
                 let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
-                format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_name} {benchmark_args}")
+                format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_str} {benchmark_args}")
             } else {
                 let mut trace_vec = Vec::new();
-                for trace_name in benchmark["traces"].members(){
-                    trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_name,"")));
+                for trace_str in benchmark["traces"].members(){
+                    trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_str,"")));
                 }
-                let trace_names = trace_vec.join(",");
-                format!("--traces={trace_names}")
+                let traces_string = trace_vec.join(",");
+                format!("--traces={traces_string}")
             };
 
-            for sniper_arg in &sniper_args {
-                let all_arguments = sniper_arg.to_owned() + " " + &bench_sniper_args + " " + &benchmark_str;
-                let args = HashMap::from([
-                    ("<BENCH_DIR>", benchmark_path.clone()),
-                    ("<BUILD_COMMAND>", benchmark_build.clone()),
-                    ("<SETUP_CMD>", setup_cmd.clone()),
-                    ("<ARGUMENTS>", all_arguments)
+            let benchmark_name = json_value_to_string(&benchmark["name"], "");
+
+            let all_arguments = format!("{benchmark_parameters} {benchmark_str}");
+
+            for run_idx in 0..nr_runs {
+                let arguments = HashMap::from([
+                    (String::from("<BENCH_DIR>"), benchmark_path.clone()),
+                    (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
+                    (String::from("<SETUP_CMD>"), setup_cmd.clone()),
+                    (String::from("<ARGUMENTS>"), all_arguments.clone())
                 ]);
-                exp_arguments.push(args);
+                benchmark_arguments.push(
+                    BenchmarkArgument{
+                        arguments,
+                        benchmark_name: benchmark_name.clone(),
+                        run_idx
+                    });
             }
         }
-        return exp_arguments;
+        return benchmark_arguments;
+    }
+
+
+
+    fn get_sniper_arguments(&self) -> Vec<HashMap<String, String>> {
+        let mut sniper_args = Vec::new();
+        //let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
+        let param_values = &self.exp["sniper_parameters"]["param_values"];
+        let mut keys: Vec<String> = Vec::new();
+        for (key, _) in param_values.entries() {keys.push(key.to_string());}
+        let param_combinations = create_all_param_values(&keys, &param_values);
+
+        for combination in param_combinations {
+            let arg = HashMap::from_iter(std::iter::zip(keys.clone(), combination));
+            sniper_args.push(arg);
+        }
+        return sniper_args;
     }
 }
 
+/* Function that creates all the possible combinations of values
+ * Output is a vector of each combination, and a combination is a vector of the string combinations
+ */
 fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
     if keys.is_empty() {return Vec::new();}
 

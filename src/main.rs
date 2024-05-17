@@ -6,6 +6,7 @@ mod job;
 use job::JobHandler;
 mod fill_template;
 mod experiments;
+mod job_data;
 
 use clap::{Parser, ArgGroup};
 use std::str::FromStr;
