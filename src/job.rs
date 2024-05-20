@@ -105,7 +105,7 @@ impl JobHandler{
         let experiment_path = Path::new("script-template/experiment_template.json");
         let benchmark_path = Path::new("script-template/benchmark_template.json");
         let experiment = ParseExperiment::new(&experiment_path, &benchmark_path);
-        let repl_maps = experiment.get_arguments();
+        let mut repl_maps = experiment.get_arguments();
 
         let template_job = Path::new("script-template/job.sh");
         let titan_path = Path::new("/home/slurmslave/jobs/submitted/.");
@@ -115,10 +115,10 @@ impl JobHandler{
 
         let mut idx = 0;
         //for JobArgument {mut meta_arguments, experiment_arguments} in repl_maps {
-        for mut job_argument in repl_maps {
+        for job_argument in &mut repl_maps {
             let _ = job_argument.prepare_host_directories();
             let meta_arguments = &mut job_argument.meta_arguments;
-            let experiment_arguments = &job_argument.experiment_arguments;
+            let experiment_arguments = &mut job_argument.experiment_arguments;
 
             meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
             let hash = hashes.next().unwrap();
@@ -143,30 +143,32 @@ impl JobHandler{
             let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
 
             if stdout.contains("Submitted batch job") {
-                self.submit_experiment(&experiment_arguments, &temp_path, job_nr);
+                self.submit_experiment(experiment_arguments, &temp_path, job_nr);
+                job_argument.job_nr = Some(job_nr.to_owned());
                 println!("Submitted job {} (jobid {})", &meta_arguments["<JOB>"], job_nr);
             } else {
                 eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
             }
             idx += 1;
         }
+        let _ = experiment.create_submit_job_map(&repl_maps);
+        //println!("Structures {:#?}", repl_maps);
     }
 
-    fn submit_experiment(&self, experiment_arguments: &Vec<ExperimentArgument>, destination: &Path, job_nr: &str) {
+    fn submit_experiment(&self, experiment_arguments: &mut Vec<ExperimentArgument>, destination: &Path, job_nr: &str) {
         let template_vm = Path::new("script-template/execute_Sniper.sh");
         let temp_exp_path = destination.join(Path::new(&job_nr));
         if ! temp_exp_path.is_dir() { let _ = fs::create_dir(&temp_exp_path); }
 
-        let mut task_id = 1;
-        for ExperimentArgument{exp_meta_info_path, variable_sniper_parameters, benchmarks} in experiment_arguments{
-            for BenchmarkArgument{arguments, benchmark_name, run_idx} in benchmarks {
-
-                let exp_file_path_str = format!("execute_{job_nr}_{task_id}.sh");
+        let mut task_idx = 1;
+        for ExperimentArgument{sniper_dir_name, variable_sniper_parameters, benchmarks} in experiment_arguments{
+            for BenchmarkArgument{arguments, benchmark_name, run_idx, task_idx: benchmark_task_idx} in benchmarks {
+                let exp_file_path_str = format!("execute_{job_nr}_{task_idx}.sh");
                 let exp_file_path = Path::new(&exp_file_path_str);
                 let dst_exp_path = temp_exp_path.join(&exp_file_path);
                 fill_template(&template_vm, &dst_exp_path, &arguments);
-
-                task_id += 1;
+                *benchmark_task_idx = Some(task_idx);
+                task_idx += 1;
             }
         }
 

@@ -12,19 +12,18 @@ use serde::{Serialize, Deserialize};
  * A Job is a the whole collections of all the different experiments (There is one job / benchmark
  * sutie, because of different mounting and git requirements.)
  */
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct JobArgument {
     pub meta_arguments: HashMap<String, String>,
-    pub experiment_arguments: Vec<ExperimentArgument>
+    pub experiment_arguments: Vec<ExperimentArgument>,
+    pub host_dst_path: PathBuf,
+    pub job_nr: Option<String>
 }
 
 impl JobArgument {
     pub fn prepare_host_directories(&self) -> std::io::Result<()> {
         for experiment_argument in &self.experiment_arguments {
-            if ! (experiment_argument.exp_meta_info_path.exists() && experiment_argument.exp_meta_info_path.is_dir()) {
-                std::fs::create_dir_all(&experiment_argument.exp_meta_info_path)?;
-            }
-            experiment_argument.set_up_host_dir()?;
+            experiment_argument.set_up_host_dir(&self.host_dst_path)?;
         }
         Ok(())
     }
@@ -35,31 +34,33 @@ impl JobArgument {
  */
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ExperimentArgument{
-    pub exp_meta_info_path: PathBuf,
+    pub sniper_dir_name: String,
     pub variable_sniper_parameters: HashMap<String, String>,
-    pub benchmarks: Vec<BenchmarkArgument>
+    pub benchmarks: Vec<BenchmarkArgument>,
 }
 
 impl ExperimentArgument {
-    pub fn set_up_host_dir(&self) -> std::io::Result<()> {
-        if ! (self.exp_meta_info_path.exists() && self.exp_meta_info_path.is_dir()) {
-            std::fs::create_dir_all(&self.exp_meta_info_path)?;
+    pub fn set_up_host_dir(&self, parent_path: &PathBuf) -> std::io::Result<()> {
+        let exp_meta_info_path = parent_path.join(&self.sniper_dir_name);
+        if ! (exp_meta_info_path.exists() && exp_meta_info_path.is_dir()) {
+            std::fs::create_dir_all(&exp_meta_info_path)?;
         }
-        self.create_host_argument_file()?;
+        self.create_host_argument_file(&exp_meta_info_path)?;
 
         for benchmark_argument in &self.benchmarks {
-            benchmark_argument.set_up_benchmark_host_dir(&self.exp_meta_info_path)?;
+            benchmark_argument.set_up_benchmark_host_dir(&exp_meta_info_path)?;
         }
         Ok(())
     }
 
-    fn create_host_argument_file(&self) -> std::io::Result<()>{
-        let file = File::create(self.exp_meta_info_path.join("args.json"))?;
+    fn create_host_argument_file(&self, dst_path: &PathBuf) -> std::io::Result<()>{
+        let file = File::create(dst_path.join("args.json"))?;
         let mut writer = std::io::BufWriter::new(file);
         let _ = serde_json::to_writer_pretty(&mut writer, &self.variable_sniper_parameters)?;
         writer.flush()?;
         Ok(())
     }
+
 }
 
 
@@ -70,7 +71,9 @@ impl ExperimentArgument {
 pub struct BenchmarkArgument{
     pub arguments: HashMap<String, String>,
     pub benchmark_name: String,
-    pub run_idx: usize
+    pub run_idx: usize,
+
+    pub task_idx: Option<usize>
 }
 
 impl BenchmarkArgument {
@@ -138,7 +141,17 @@ impl ParseExperiment{
             ]);
 
             let experiment_arguments = self.get_exp_arguments(&suite, nr_runs);
-            job_args.push(JobArgument{meta_arguments, experiment_arguments});
+
+            let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+            let host_dst_path = Path::new(&host_dst_path_str);
+
+            job_args.push(
+                JobArgument{
+                    meta_arguments, 
+                    experiment_arguments,
+                    host_dst_path: host_dst_path.to_path_buf(),
+                    job_nr: None
+                });
         }
         return job_args;
     }
@@ -211,8 +224,8 @@ impl ParseExperiment{
         sniper_str_arguments.push_str(" ");
         let benchmarks_arguments = self.get_benchmark_arguments(&benchmark_suite, nr_runs);
 
-        let host_job_exp_meta_info_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
-        let host_job_exp_meta_info_path = Path::new(&host_job_exp_meta_info_path_str);
+        //let host_job_exp_meta_info_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+        //let host_job_exp_meta_info_path = Path::new(&host_job_exp_meta_info_path_str);
         
         for sniper_arg in &sniper_arg_maps {
             let mut sniper_str_arg: String = sniper_str_arguments.clone();
@@ -224,11 +237,10 @@ impl ParseExperiment{
             }
 
             let sniper_dir_name: String = sniper_arg.clone().into_values().collect::<Vec<String>>().join("_");
-            let exp_meta_info_path = host_job_exp_meta_info_path.join(sniper_dir_name);
             
             exp_arguments.push(
                 ExperimentArgument{
-                    exp_meta_info_path,
+                    sniper_dir_name,
                     variable_sniper_parameters: sniper_arg.clone(),
                     benchmarks
                 });
@@ -290,7 +302,8 @@ impl ParseExperiment{
                     BenchmarkArgument{
                         arguments,
                         benchmark_name: benchmark_name.clone(),
-                        run_idx
+                        run_idx,
+                        task_idx: None
                     });
             }
         }
@@ -312,6 +325,18 @@ impl ParseExperiment{
             sniper_args.push(arg);
         }
         return sniper_args;
+    }
+
+
+    pub fn create_submit_job_map(&self, job_arguments: &Vec<JobArgument>) -> std::io::Result<()> {
+        let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+        let host_dst_path = Path::new(&host_dst_path_str);
+
+        let file = File::create(host_dst_path.join("experiments.json"))?;
+        let mut writer = std::io::BufWriter::new(file);
+        let _ = serde_json::to_writer_pretty(&mut writer, job_arguments)?;
+        writer.flush()?;
+        Ok(())
     }
 }
 
