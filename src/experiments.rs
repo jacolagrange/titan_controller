@@ -2,6 +2,7 @@ use json;
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::Read;
+use std::io::Write as IoWrite;
 use std::fmt::Write;
 use std::collections::HashMap;
 
@@ -17,6 +18,18 @@ pub struct JobArgument {
     pub experiment_arguments: Vec<ExperimentArgument>
 }
 
+impl JobArgument {
+    pub fn prepare_host_directories(&self) -> std::io::Result<()> {
+        for experiment_argument in &self.experiment_arguments {
+            if ! (experiment_argument.exp_meta_info_path.exists() && experiment_argument.exp_meta_info_path.is_dir()) {
+                std::fs::create_dir_all(&experiment_argument.exp_meta_info_path)?;
+            }
+            experiment_argument.set_up_host_dir()?;
+        }
+        Ok(())
+    }
+}
+
 /*
  * An experiment is defined for a given (sniper) configuration with defined parameters
  */
@@ -25,6 +38,28 @@ pub struct ExperimentArgument{
     pub exp_meta_info_path: PathBuf,
     pub variable_sniper_parameters: HashMap<String, String>,
     pub benchmarks: Vec<BenchmarkArgument>
+}
+
+impl ExperimentArgument {
+    pub fn set_up_host_dir(&self) -> std::io::Result<()> {
+        if ! (self.exp_meta_info_path.exists() && self.exp_meta_info_path.is_dir()) {
+            std::fs::create_dir_all(&self.exp_meta_info_path)?;
+        }
+        self.create_host_argument_file()?;
+
+        for benchmark_argument in &self.benchmarks {
+            benchmark_argument.set_up_benchmark_host_dir(&self.exp_meta_info_path)?;
+        }
+        Ok(())
+    }
+
+    fn create_host_argument_file(&self) -> std::io::Result<()>{
+        let file = File::create(self.exp_meta_info_path.join("args.json"))?;
+        let mut writer = std::io::BufWriter::new(file);
+        let _ = serde_json::to_writer_pretty(&mut writer, &self.variable_sniper_parameters)?;
+        writer.flush()?;
+        Ok(())
+    }
 }
 
 
@@ -36,6 +71,16 @@ pub struct BenchmarkArgument{
     pub arguments: HashMap<String, String>,
     pub benchmark_name: String,
     pub run_idx: usize
+}
+
+impl BenchmarkArgument {
+    pub fn set_up_benchmark_host_dir(&self, dst_path: &PathBuf) -> std::io::Result<()> {
+        let benchmark_path = dst_path.join(&self.benchmark_name).join(&self.run_idx.to_string());
+        if ! (benchmark_path.exists() && benchmark_path.is_dir()) {
+            std::fs::create_dir_all(&benchmark_path)?;
+        }
+        Ok(())
+    }
 }
 
 

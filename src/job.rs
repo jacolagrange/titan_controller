@@ -113,7 +113,13 @@ impl JobHandler{
         //Obtain a unique hash from the server
         let mut hashes = ssh::get_hash_titan(repl_maps.len()).into_iter();
 
-        for JobArgument {mut meta_arguments, experiment_arguments} in repl_maps {
+        let mut idx = 0;
+        //for JobArgument {mut meta_arguments, experiment_arguments} in repl_maps {
+        for mut job_argument in repl_maps {
+            let _ = job_argument.prepare_host_directories();
+            let meta_arguments = &mut job_argument.meta_arguments;
+            let experiment_arguments = &job_argument.experiment_arguments;
+
             meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
             let hash = hashes.next().unwrap();
 
@@ -123,11 +129,12 @@ impl JobHandler{
             let dst_job_path = temp_path.join(&job_file_path);
             fill_template(&template_job, &dst_job_path , &meta_arguments);
             let titan_job_path = titan_path.join(&job_file_path);
-            let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
+            //TODO remove comment for debug
+            //let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
 
             //TODO remove comment for debug
             //let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
-            let stdout = String::from("Submitted batch job 12345"); //TODO remove this
+            let stdout = format!("Submitted batch job 12345{idx}"); //TODO remove this
             let stderr = String::new();
             //Sbatch is send, the job-file is not needed anymore
             //TODO remove comment for debug
@@ -141,6 +148,7 @@ impl JobHandler{
             } else {
                 eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
             }
+            idx += 1;
         }
     }
 
