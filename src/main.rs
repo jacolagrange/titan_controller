@@ -22,16 +22,16 @@ use std::path::Path;
                 .args(["list", "submit", "delete", "collect"]),
         ))]
 struct Args{
-    #[arg(short, long, group="Glist", value_parser = TitanObject::parse_titan_obj)]
+    #[arg(long, group="Glist", value_parser = TitanObject::parse_titan_obj)]
     list: Option<TitanObject>, 
 
-    #[arg(short, long, group="Gsubmit", value_parser = TitanObject::parse_titan_obj)]
+    #[arg(long, group="Gsubmit", value_parser = TitanObject::parse_titan_obj)]
     submit: Option<TitanObject>,
 
-    #[arg(short, long, group="Gdelete", value_parser = TitanObject::parse_titan_obj)]
+    #[arg(long, group="Gdelete", value_parser = TitanObject::parse_titan_obj)]
     delete: Option<TitanObject>,
 
-    #[arg(short, long, group="Gcollect", value_parser = TitanObject::parse_titan_obj)]
+    #[arg(long, group="Gcollect", value_parser = TitanObject::parse_titan_obj)]
     collect: Option<TitanObject>,
 
     // If we display all the information or restricted to the user. (Only valid with --list)
