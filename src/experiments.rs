@@ -64,6 +64,13 @@ impl ExperimentArgument {
 }
 
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum JobStatus {
+    SUBMITTED,
+    DONE,
+    FAILED
+}
+
 /*
  * A Benchmark is the based on the Experiment, all the inputs it needs to be run with
  */ 
@@ -73,8 +80,10 @@ pub struct BenchmarkArgument{
     pub benchmark_name: String,
     pub run_idx: usize,
 
-    pub task_idx: Option<usize>
+    pub task_idx: Option<usize>,
+    pub status: JobStatus
 }
+
 
 impl BenchmarkArgument {
     pub fn set_up_benchmark_host_dir(&self, dst_path: &PathBuf) -> std::io::Result<()> {
@@ -303,7 +312,8 @@ impl ParseExperiment{
                         arguments,
                         benchmark_name: benchmark_name.clone(),
                         run_idx,
-                        task_idx: None
+                        task_idx: None,
+                        status: JobStatus::SUBMITTED
                     });
             }
         }
@@ -377,4 +387,11 @@ fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
         json::JsonValue::Boolean(bool_val) => {bool_val.to_string()}
         _ => {String::new()}
     }
+}
+
+pub fn get_job_map(job_map_path: &Path) -> std::io::Result<Vec<JobArgument>> {
+    let file = File::open(&job_map_path)?;
+    let mut reader = std::io::BufReader::new(file);
+    let job_arguments: Vec<JobArgument> = serde_json::from_reader(&mut reader)?;
+    Ok(job_arguments)
 }

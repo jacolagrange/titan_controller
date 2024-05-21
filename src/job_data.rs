@@ -23,7 +23,7 @@ impl JobData {
 
     pub fn write_data(&self, job_data_points: Vec<JobDataPoint>) {
         let result_file = File::create(&self.result_path).unwrap();
-        serde_json::to_writer_pretty(&result_file, &job_data_points);
+        let _ = serde_json::to_writer_pretty(&result_file, &job_data_points);
         drop(result_file);
     }
 

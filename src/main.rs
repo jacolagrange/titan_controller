@@ -7,6 +7,7 @@ use job::JobHandler;
 mod fill_template;
 mod experiments;
 mod job_data;
+mod test_job;
 
 use clap::{Parser, ArgGroup};
 use std::str::FromStr;
@@ -18,7 +19,7 @@ use std::path::Path;
 #[command(group(
             ArgGroup::new("TitanCmd")
                 .required(true)
-                .args(["list", "submit", "delete"]),
+                .args(["list", "submit", "delete", "collect"]),
         ))]
 struct Args{
     #[arg(short, long, group="Glist", value_parser = TitanObject::parse_titan_obj)]
@@ -29,6 +30,9 @@ struct Args{
 
     #[arg(short, long, group="Gdelete", value_parser = TitanObject::parse_titan_obj)]
     delete: Option<TitanObject>,
+
+    #[arg(short, long, group="Gcollect", value_parser = TitanObject::parse_titan_obj)]
+    collect: Option<TitanObject>,
 
     // If we display all the information or restricted to the user. (Only valid with --list)
     #[arg(short, long, requires = "Glist")]
@@ -73,7 +77,7 @@ impl JobIds{
                 ids.push(usize::from_str(part)?);
             }
         }
-        Ok(JobIds{ids: ids})
+        Ok(JobIds{ids})
     }
 }
 
@@ -146,6 +150,16 @@ pub fn main() {
                 let s = JobHandler::new(creds, false, None);
                 // s.submit_job(Vec::from([Path::new("hello.test"), Path::new("execute.test")]));
                 s.submit_job();
+            }
+        }
+    } else if let Some(titan_obj) = args.collect {
+        match titan_obj {
+            TitanObject::Job => {
+                let mut s = JobHandler::new(creds, false, None);
+                s.collect_jobs();
+            }
+            _ => {
+                println!("Unsupported feature");
             }
         }
     }

@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::path::Path;
 
 pub fn send_command(command: &str) -> (String, String){
     let output = Command::new("ssh")
@@ -30,6 +31,17 @@ pub fn get_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
         .output()?;
     if output.stderr.len() > 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
+    }
+    Ok(())
+}
+
+pub fn untar(src_path: &Path, dst_path: &Path, delete_tar: bool) -> Result<(), std::io::Error> {
+    let _output = Command::new("tar")
+        .arg("-xzf")
+        .arg(dst_path)
+        .output()?;
+    if delete_tar {
+        let _output2 = Command::new("rm").arg(dst_path).output()?;
     }
     Ok(())
 }
