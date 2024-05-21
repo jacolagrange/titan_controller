@@ -181,7 +181,7 @@ impl JobHandler{
         let temp_path = self.get_tmp_path();
 
         let job_path = Path::new("/tmp/my_experiment");
-        let experiment_json_path = job_path.join("experiment.json");
+        let experiment_json_path = job_path.join("experiments.json");
         let mut jobs = get_job_map(&experiment_json_path).unwrap();
 
         self.all = false;
@@ -195,11 +195,14 @@ impl JobHandler{
                     if benchmark_argument.status != JobStatus::SUBMITTED {continue;}
                     let bench_job_id = format!("{}_{}", job_argument.job_nr.as_ref().unwrap(), benchmark_argument.task_idx.unwrap());
                     if ! titan_job_ids.contains(&bench_job_id) {
-                        let src_path = format!("/home/slurmslave/results/{bench_job_id}");
-                        let tar_file_path = temp_path.join(&bench_job_id);
+                        let result_file = format!("results_{bench_job_id}.tar.gz");
+                        let src_path = format!("/home/slurmslave/results/{result_file}");
+                        let tar_file_path = temp_path.join(&result_file);
                         let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name).join(&benchmark_argument.benchmark_name).join(&benchmark_argument.run_idx.to_string());
 
+                        println!("Getting job {bench_job_id} from {:?} to {:?}", src_path, temp_path);
                         let _ = ssh::get_files(&src_path, temp_path.to_str().unwrap());
+                        println!("Untarring job {bench_job_id} from {:?} to {:?}", tar_file_path, dst_path);
                         let _ = ssh::untar(&tar_file_path, &dst_path, true);
 
                         benchmark_argument.status = 

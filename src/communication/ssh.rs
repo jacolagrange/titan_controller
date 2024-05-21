@@ -38,10 +38,13 @@ pub fn get_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
 pub fn untar(src_path: &Path, dst_path: &Path, delete_tar: bool) -> Result<(), std::io::Error> {
     let _output = Command::new("tar")
         .arg("-xzf")
+        .arg(src_path)
+        .arg("-C")
         .arg(dst_path)
         .output()?;
+    println!("{:?} {:?}", String::from_utf8(_output.stdout).unwrap(), String::from_utf8(_output.stderr).unwrap());
     if delete_tar {
-        let _output2 = Command::new("rm").arg(dst_path).output()?;
+        let _output2 = Command::new("rm").arg(src_path).output()?;
     }
     Ok(())
 }
