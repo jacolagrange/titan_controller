@@ -42,7 +42,7 @@ pub fn untar(src_path: &Path, dst_path: &Path, delete_tar: bool) -> Result<(), s
         .arg("-C")
         .arg(dst_path)
         .output()?;
-    println!("{:?} {:?}", String::from_utf8(_output.stdout).unwrap(), String::from_utf8(_output.stderr).unwrap());
+    //println!("{:?} {:?}", String::from_utf8(_output.stdout).unwrap(), String::from_utf8(_output.stderr).unwrap());
     if delete_tar {
         let _output2 = Command::new("rm").arg(src_path).output()?;
     }

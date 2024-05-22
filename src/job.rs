@@ -1,7 +1,7 @@
 use crate::communication::ssh;
 use crate::credentials::Credentials;
 use crate::fill_template::fill_template;
-use crate::experiments::{ParseExperiment, ExperimentArgument, BenchmarkArgument, get_job_map, JobStatus};
+use crate::experiments::{ParseExperiment, ExperimentArgument, BenchmarkArgument, JobStatus, get_job_map, write_submit_job_map};
 use crate::test_job;
 
 use std::str::FromStr;
@@ -137,8 +137,6 @@ impl JobHandler{
             let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
 
             let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
-            // let stdout = format!("Submitted batch job 12345{idx}"); //TODO remove this
-            // let stderr = String::new();
             //Sbatch is send, the job-file is not needed anymore
             let _ = ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()));
             
@@ -200,9 +198,7 @@ impl JobHandler{
                         let tar_file_path = temp_path.join(&result_file);
                         let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name).join(&benchmark_argument.benchmark_name).join(&benchmark_argument.run_idx.to_string());
 
-                        println!("Getting job {bench_job_id} from {:?} to {:?}", src_path, temp_path);
                         let _ = ssh::get_files(&src_path, temp_path.to_str().unwrap());
-                        println!("Untarring job {bench_job_id} from {:?} to {:?}", tar_file_path, dst_path);
                         let _ = ssh::untar(&tar_file_path, &dst_path, true);
 
                         benchmark_argument.status = 
@@ -212,5 +208,6 @@ impl JobHandler{
                 }
             }
         }
+        let _ = write_submit_job_map(&jobs, &experiment_json_path);
     }
 }

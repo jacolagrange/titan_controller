@@ -1,6 +1,6 @@
 use json;
 use std::path::{Path, PathBuf};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Read;
 use std::io::Write as IoWrite;
 use std::fmt::Write;
@@ -84,7 +84,6 @@ pub struct BenchmarkArgument{
     pub status: JobStatus
 }
 
-
 impl BenchmarkArgument {
     pub fn set_up_benchmark_host_dir(&self, dst_path: &PathBuf) -> std::io::Result<()> {
         let benchmark_path = dst_path.join(&self.benchmark_name).join(&self.run_idx.to_string());
@@ -94,7 +93,6 @@ impl BenchmarkArgument {
         Ok(())
     }
 }
-
 
 #[derive(Debug)]
 pub struct ParseExperiment{
@@ -320,8 +318,6 @@ impl ParseExperiment{
         return benchmark_arguments;
     }
 
-
-
     fn get_sniper_arguments(&self) -> Vec<HashMap<String, String>> {
         let mut sniper_args = Vec::new();
         //let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
@@ -338,17 +334,27 @@ impl ParseExperiment{
     }
 
 
-    pub fn create_submit_job_map(&self, job_arguments: &Vec<JobArgument>) -> std::io::Result<()> {
+    pub fn create_submit_job_map(&self, job_arguments: &Vec<JobArgument>) {
         let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
         let host_dst_path = Path::new(&host_dst_path_str);
-
-        let file = File::create(host_dst_path.join("experiments.json"))?;
-        let mut writer = std::io::BufWriter::new(file);
-        let _ = serde_json::to_writer_pretty(&mut writer, job_arguments)?;
-        writer.flush()?;
-        Ok(())
+        let _ = write_submit_job_map(job_arguments, host_dst_path);
     }
 }
+
+pub fn write_submit_job_map(job_arguments: &Vec<JobArgument>, host_dst_path: &Path) -> std::io::Result<()> {
+    let file_path = if host_dst_path.file_name().unwrap().to_str().unwrap() != "experiments.json" {
+        host_dst_path.join("experiments.json")
+    } else {
+        host_dst_path.to_path_buf()
+    };
+
+    let file = File::create(file_path)?;
+    let mut writer = std::io::BufWriter::new(file);
+    let _ = serde_json::to_writer_pretty(&mut writer, job_arguments)?;
+    writer.flush()?;
+    Ok(())
+}
+
 
 /* Function that creates all the possible combinations of values
  * Output is a vector of each combination, and a combination is a vector of the string combinations
