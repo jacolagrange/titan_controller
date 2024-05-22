@@ -7,7 +7,10 @@ What needs to be implemented:
 	- First filter out all the failed experiments and remake a Job structure for them. (Still per benchmark suite.)
 	- Update the experiments.json file to keep track of only the failed ones. But we need somehow to keep track of the busy benchmarks from previous iterations. (Maybe append the new Jobs to the new Job list?)
 - [ ] Refactor a bit of the code, to make it a bit more readable
-- [ ] Update the python scripts to read from the new database to put into Panda
+- [ ] Update the python scripts to read from the new database to put into Pandas
+
+- [ ] Add a file to put all the constants (json-filenames for example)
+- [ ] Modify experiments.rs to use serde\_json instead of the json package
 
 # Structure
 The current structure of benchmarks are:

@@ -1,6 +1,6 @@
 use json;
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Read;
 use std::io::Write as IoWrite;
 use std::fmt::Write;
