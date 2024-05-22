@@ -11,6 +11,6 @@ What needs to be implemented:
 
 # Structure
 The current structure of benchmarks are:
--> Job: which is one (slurm)job per benchmark suite, and it does contain several experiments
---> Experiment (Every rotation of the Sniper arguments has its own experiment, it does contain several benchmarks)
----> Benchmark (Every benchmark has its own parameters to be able to be run.)
+- Job: which is one (slurm)job per benchmark suite, and it does contain several experiments
+	- Experiment (Every rotation of the Sniper arguments has its own experiment, it does contain several benchmarks)
+		- Benchmark (Every benchmark has its own parameters to be able to be run.)
