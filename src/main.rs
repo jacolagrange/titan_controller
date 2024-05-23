@@ -149,8 +149,14 @@ pub fn main() {
             }
             TitanObject::Job => {
                 let s = JobHandler::new(creds, false, None);
-                // s.submit_job(Vec::from([Path::new("hello.test"), Path::new("execute.test")]));
-                s.submit_job();
+                let paths = args.path.unwrap();
+                if paths.len() >= 2 {
+                    let experiment_path = &paths[0];
+                    let benchmarks_path = &paths[1];
+                    s.submit_job(experiment_path, benchmarks_path);
+                } else {
+                    eprintln!("You need to provide an experiment and an benchmarks path to submit a Job");
+                }
             }
         }
     } else if let Some(titan_obj) = args.collect {
