@@ -1,8 +1,10 @@
 use crate::communication::ssh;
 use crate::credentials::Credentials;
 use crate::fill_template::fill_template;
-use crate::experiments::{ParseExperiment, ExperimentArgument, BenchmarkArgument, JobStatus, get_job_map, write_submit_job_map};
+use crate::experiments::{ParseExperiment, get_job_map, write_submit_job_map};
+use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
 use crate::test_job;
+use crate::constants::{JOB_TEMPLATE, EXECUTE_TEMPLATE, EXPERIMENT_DB_NAME, TEMP_FOLDER_NAME, TITAN_SUBMIT_DIR};
 
 use std::str::FromStr;
 use std::fs;
@@ -96,7 +98,7 @@ impl JobHandler{
     }
 
     fn get_tmp_path(&self) -> PathBuf {
-        let temp_path = Path::new("/tmp/titan_controller");
+        let temp_path = Path::new(TEMP_FOLDER_NAME);
         if ! temp_path.is_dir(){
             let _ = fs::create_dir(temp_path);
         }
@@ -113,73 +115,81 @@ impl JobHandler{
         let experiment = ParseExperiment::new(&experiment_path, &benchmark_path);
         let mut repl_maps = experiment.get_arguments();
 
-        let template_job = Path::new("script-template/job.sh");
-        let titan_path = Path::new("/home/slurmslave/jobs/submitted/.");
 
         //Obtain a unique hash from the server
-        let mut hashes = ssh::get_hash_titan(repl_maps.len()).into_iter();
+        let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len()).into_iter();
 
-        //let mut idx = 0;
-        for job_argument in &mut repl_maps {
-            let _ = job_argument.prepare_host_directories();
-            let meta_arguments = &mut job_argument.meta_arguments;
-            let experiment_arguments = &mut job_argument.experiment_arguments;
-
-            meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
-            let hash = hashes.next().unwrap();
-
-            //Create job file
-            let job_file_path_str = format!("job_{hash}.sh");
-            let job_file_path = Path::new(&job_file_path_str);
-            let dst_job_path = temp_path.join(&job_file_path);
-            fill_template(&template_job, &dst_job_path , &meta_arguments);
-            let titan_job_path = titan_path.join(&job_file_path);
-            let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
-
-            let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
-            //Sbatch is send, the job-file is not needed anymore
-            let _ = ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()));
-            
-            let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
-
-            if stdout.contains("Submitted batch job") {
-                self.submit_experiment(experiment_arguments, titan_path, &temp_path, job_nr);
-                job_argument.job_nr = Some(job_nr.to_owned());
-                println!("Submitted job {} (jobid {})", &meta_arguments["<JOB>"], job_nr);
-            } else {
-                eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
-            }
-            //idx += 1;
+        for job_argument in &mut repl_maps.job_arguments {
+            self.submit_one_job(job_argument, &temp_path, &hashes.next().unwrap());
         }
         let _ = experiment.create_submit_job_map(&repl_maps);
-        //println!("Structures {:#?}", repl_maps);
     }
 
-    fn submit_experiment(&self, experiment_arguments: &mut Vec<ExperimentArgument>, titan_path: &Path, destination: &Path, job_nr: &str) {
-        let template_vm = Path::new("script-template/execute_Sniper.sh");
+    fn submit_one_job(&self, job_argument: &mut JobArgument, temp_path: &Path, hash: &str) {
+        let titan_path = Path::new(TITAN_SUBMIT_DIR);
+        let _ = job_argument.prepare_host_directories();
+
+        let nr_tasks = job_argument.get_number_task();
+        //let meta_arguments = &mut job_argument.meta_arguments;
+        if ! job_argument.meta_arguments.contains_key("<TASKS>") {
+            job_argument.meta_arguments.insert(String::from("<TASKS>"), nr_tasks.to_string());
+        } else {
+            *job_argument.meta_arguments.get_mut("<TASKS>").unwrap() = nr_tasks.to_string();
+        }
+
+        if job_argument.meta_arguments.contains_key("<ACCOUNT>") {
+            job_argument.meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
+        }
+
+        //Create job file
+        let job_file_path_str = format!("job_{hash}.sh");
+        let job_file_path = Path::new(&job_file_path_str);
+        let dst_job_path = temp_path.join(&job_file_path);
+        fill_template(JOB_TEMPLATE.to_owned(), &dst_job_path , &job_argument.meta_arguments);
+        let titan_job_path = titan_path.join(&job_file_path);
+        let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
+
+        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
+        //Sbatch is send, the job-file is not needed anymore
+        let _ = ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()));
+        
+        let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
+
+        if stdout.contains("Submitted batch job") {
+            self.submit_experiment(job_argument, &temp_path, job_nr);
+            job_argument.job_nr = Some(job_nr.to_owned());
+            println!("Submitted job {} (jobid {})", &job_argument.meta_arguments["<JOB>"], job_nr);
+        } else {
+            eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
+        }
+    }
+
+    /*
+     * Takes a vecotr of experiments, and apply the template to them and finally sends all the
+     * files to Titan.
+     */
+    fn submit_experiment(&self, job_argument: &mut JobArgument, destination: &Path, job_nr: &str) {
+        let titan_path = Path::new(TITAN_SUBMIT_DIR);
         let temp_exp_path = destination.join(Path::new(&job_nr));
         if ! temp_exp_path.is_dir() { let _ = fs::create_dir(&temp_exp_path); }
 
         let mut task_idx = 1;
-        for ExperimentArgument{sniper_dir_name: _, variable_sniper_parameters: _, benchmarks} in experiment_arguments{
+        for ExperimentArgument{sniper_dir_name: _, variable_sniper_parameters: _, benchmarks} in &mut job_argument.experiment_arguments{
             for BenchmarkArgument{arguments, benchmark_name: _, run_idx: _, task_idx: benchmark_task_idx, status: _} in benchmarks {
                 let exp_file_path_str = format!("execute_{job_nr}_{task_idx}.sh");
                 let exp_file_path = Path::new(&exp_file_path_str);
                 let dst_exp_path = temp_exp_path.join(&exp_file_path);
-                fill_template(&template_vm, &dst_exp_path, &arguments);
+                fill_template(EXECUTE_TEMPLATE.to_owned(), &dst_exp_path, &arguments);
                 *benchmark_task_idx = Some(task_idx);
                 task_idx += 1;
             }
         }
-
         let _ = ssh::send_files(&temp_exp_path.join(Path::new("*")).to_str().unwrap(), &titan_path.to_str().unwrap());
     }
 
     pub fn collect_jobs(&mut self) {
-        let temp_path = self.get_tmp_path();
-
         let job_path = Path::new("/tmp/my_experiment");
-        let experiment_json_path = job_path.join("experiments.json");
+        let experiment_json_path = job_path.join(EXPERIMENT_DB_NAME);
         let mut jobs = get_job_map(&experiment_json_path).unwrap();
 
         self.all = false;
@@ -187,27 +197,54 @@ impl JobHandler{
         let titan_job_stats = self.get_jobs();
         let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.job_id.clone()).collect();
 
-        for job_argument in &mut jobs {
+        for job_argument in &mut jobs.job_arguments {
             for experiment_argument in &mut job_argument.experiment_arguments {
                 for benchmark_argument in &mut experiment_argument.benchmarks {
                     if benchmark_argument.status != JobStatus::SUBMITTED {continue;}
                     let bench_job_id = format!("{}_{}", job_argument.job_nr.as_ref().unwrap(), benchmark_argument.task_idx.unwrap());
                     if ! titan_job_ids.contains(&bench_job_id) {
-                        let result_file = format!("results_{bench_job_id}.tar.gz");
-                        let src_path = format!("/home/slurmslave/results/{result_file}");
-                        let tar_file_path = temp_path.join(&result_file);
-                        let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name).join(&benchmark_argument.benchmark_name).join(&benchmark_argument.run_idx.to_string());
-
-                        let _ = ssh::get_files(&src_path, temp_path.to_str().unwrap());
-                        let _ = ssh::untar(&tar_file_path, &dst_path, true);
-
-                        benchmark_argument.status = 
-                            if test_job::job_succeed(&dst_path) {JobStatus::DONE}
-                            else { JobStatus::FAILED}
+                        let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name);
+                        self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path);
                     }
                 }
             }
         }
+
+        let mut failed_jobs = jobs.clone();
+        failed_jobs.keep_failed_task();
+
+        if jobs.job_arguments.len() > 0 {
+            self.retry_jobs(&mut failed_jobs);
+            failed_jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::SUBMITTED);
+
+            jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::RETRIED);
+            jobs.job_arguments.append(&mut failed_jobs.job_arguments);
+        }
         let _ = write_submit_job_map(&jobs, &experiment_json_path);
+    }
+
+    fn retrieve_result(&self, benchmark_argument: &mut BenchmarkArgument, bench_job_id: &str, host_dst_path: &Path) {
+        let temp_path = self.get_tmp_path();
+
+        let result_file = format!("results_{bench_job_id}.tar.gz");
+        let src_path = format!("/home/slurmslave/results/{result_file}");
+        let tar_file_path = temp_path.join(&result_file);
+        let dst_path = host_dst_path.join(&benchmark_argument.benchmark_name).join(&benchmark_argument.run_idx.to_string());
+        
+        let _ = ssh::get_files(&src_path, temp_path.to_str().unwrap());
+        let _ = ssh::untar(&tar_file_path, &dst_path, true);
+        
+        benchmark_argument.status = 
+            if test_job::job_succeed(&dst_path) {JobStatus::DONE}
+            else {JobStatus::FAILED}
+    }
+
+    fn retry_jobs(&self, jobs: &mut Arguments) {
+        let mut hashes = ssh::get_hash_titan(jobs.job_arguments.len()).into_iter();
+
+        let temp_path = self.get_tmp_path();
+        for job_argument in &mut jobs.job_arguments {
+            self.submit_one_job(job_argument, &temp_path, &hashes.next().unwrap());
+        }
     }
 }

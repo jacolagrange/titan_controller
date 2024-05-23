@@ -8,6 +8,7 @@ mod fill_template;
 mod experiments;
 mod job_data;
 mod test_job;
+mod constants;
 
 use clap::{Parser, ArgGroup};
 use std::str::FromStr;
