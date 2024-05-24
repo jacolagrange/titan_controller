@@ -17,7 +17,6 @@ pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> 
         .arg("-c")
         .arg(["scp", "-r", src_path, &full_dst].join(" "))
         .output()?;
-    println!("scp output\n{:?} \nerror\n{:?}\n", String::from_utf8(output.stdout.clone()).unwrap(), String::from_utf8(output.stderr.clone()).unwrap());
     if output.stderr.len() > 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }
@@ -46,6 +45,14 @@ pub fn untar(src_path: &Path, dst_path: &Path, delete_tar: bool) -> Result<(), s
     if delete_tar {
         let _output2 = Command::new("rm").arg(src_path).output()?;
     }
+    Ok(())
+}
+
+pub fn clean_dir(dir_path: &Path) -> Result<(), std::io::Error> {
+    let _output = Command::new("bash")
+        .arg("-c")
+        .arg(["rm", "-r", dir_path.join("*").to_str().unwrap()].join(" "))
+        .output()?;
     Ok(())
 }
 

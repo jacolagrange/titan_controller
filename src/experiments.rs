@@ -128,20 +128,13 @@ impl ParseExperiment{
         return vm_mounts;
     }
 
-    // fn get_number_configs(&self) -> usize {
-    //     let mut nr_conf: usize = 1;
-    //     for (_, vals) in self.exp["sniper_parameters"]["param_values"].entries(){
-    //         nr_conf *= vals.len();
-    //     }
-    //     return nr_conf;
-    // }
-
     /*
      * Function to process all the arguments for the benchmark themselves
      */
     fn get_exp_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<ExperimentArgument> {
         let mut exp_arguments: Vec<ExperimentArgument> = Vec::new();
-        let sniper_arg_maps = self.get_sniper_arguments();
+        let sniper_arg_keys = self.get_sniper_argument_keys();
+        let sniper_arg_maps = self.get_sniper_arguments(&sniper_arg_keys);
         let mut sniper_str_arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
         sniper_str_arguments.push_str(" ");
         let benchmarks_arguments = self.get_benchmark_arguments(&benchmark_suite, nr_runs);
@@ -158,7 +151,7 @@ impl ParseExperiment{
                 benchmark.arguments.get_mut("<ARGUMENTS>").unwrap().insert_str(0, &sniper_str_arg);
             }
 
-            let sniper_dir_name: String = sniper_arg.clone().into_values().collect::<Vec<String>>().join("_");
+            let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
             
             exp_arguments.push(
                 ExperimentArgument{
@@ -233,19 +226,33 @@ impl ParseExperiment{
         return benchmark_arguments;
     }
 
-    fn get_sniper_arguments(&self) -> Vec<HashMap<String, String>> {
-        let mut sniper_args = Vec::new();
-        //let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
+    fn get_sniper_argument_keys(&self) -> Vec<String> {
         let param_values = &self.exp["sniper_parameters"]["param_values"];
         let mut keys: Vec<String> = Vec::new();
         for (key, _) in param_values.entries() {keys.push(key.to_string());}
-        let param_combinations = create_all_param_values(&keys, &param_values);
+        return keys;
+    }
+
+    fn get_sniper_arguments(&self, sniper_arg_keys: &Vec<String>) -> Vec<HashMap<String, String>> {
+        let mut sniper_args = Vec::new();
+        //let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
+        let param_values = &self.exp["sniper_parameters"]["param_values"];
+        let param_combinations = create_all_param_values(sniper_arg_keys, &param_values);
 
         for combination in param_combinations {
-            let arg = HashMap::from_iter(std::iter::zip(keys.clone(), combination));
+            let arg = HashMap::from_iter(std::iter::zip(sniper_arg_keys.clone(), combination));
             sniper_args.push(arg);
         }
         return sniper_args;
+    }
+
+    fn get_sniper_dir_name(&self, sniper_arg_keys: &Vec<String>, sniper_arg_vals: &HashMap<String, String>) -> String {
+        let mut sniper_dir_vals: Vec<&str> = Vec::new();
+        for key in sniper_arg_keys {
+            sniper_dir_vals.push(&sniper_arg_vals[key]);
+        }
+        let sniper_dir_name = sniper_dir_vals.join("_");
+        return sniper_dir_name;
     }
 
 
@@ -311,7 +318,13 @@ fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
 }
 
 pub fn get_job_map(job_map_path: &Path) -> std::io::Result<Arguments> {
-    let file = File::open(&job_map_path)?;
+    let file_path = if job_map_path.file_name().unwrap().to_str().unwrap() != EXPERIMENT_DB_NAME {
+        job_map_path.join(EXPERIMENT_DB_NAME)
+    } else {
+        job_map_path.to_path_buf()
+    };
+
+    let file = File::open(&file_path)?;
     let mut reader = std::io::BufReader::new(file);
     let job_arguments: Arguments = serde_json::from_reader(&mut reader)?;
     Ok(job_arguments)

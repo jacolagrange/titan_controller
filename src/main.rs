@@ -1,6 +1,7 @@
 mod communication;
 mod credentials;
 use credentials::Credentials;
+use crate::constants::EXPERIMENT_DB_NAME;
 mod stat;
 mod job;
 use job::JobHandler;
@@ -32,7 +33,7 @@ struct Args{
     #[arg(long, group="Gdelete", value_parser = TitanObject::parse_titan_obj)]
     delete: Option<TitanObject>,
 
-    #[arg(long, group="Gcollect", value_parser = TitanObject::parse_titan_obj)]
+    #[arg(long, group="Gsubmit", value_parser = TitanObject::parse_titan_obj)]
     collect: Option<TitanObject>,
 
     // If we display all the information or restricted to the user. (Only valid with --list)
@@ -163,7 +164,12 @@ pub fn main() {
         match titan_obj {
             TitanObject::Job => {
                 let mut s = JobHandler::new(creds, false, None);
-                s.collect_jobs();
+                if let Some(paths) = args.path {
+                    let experiment_map_path = Path::new(&paths[0]);
+                    s.collect_jobs(&experiment_map_path);
+                } else {
+                    eprintln!("You need to provide a Path with a {} file to download the experiments", EXPERIMENT_DB_NAME);
+                }
             }
             _ => {
                 println!("Unsupported feature");

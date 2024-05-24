@@ -4,7 +4,7 @@ use crate::fill_template::fill_template;
 use crate::experiments::{ParseExperiment, get_job_map, write_submit_job_map};
 use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
 use crate::test_job;
-use crate::constants::{JOB_TEMPLATE, EXECUTE_TEMPLATE, EXPERIMENT_DB_NAME, TEMP_FOLDER_NAME, TITAN_SUBMIT_DIR};
+use crate::constants::{JOB_TEMPLATE, EXECUTE_TEMPLATE, TEMP_FOLDER_NAME, TITAN_SUBMIT_DIR};
 
 use std::str::FromStr;
 use std::fs;
@@ -132,7 +132,7 @@ impl JobHandler{
             *job_argument.meta_arguments.get_mut("<TASKS>").unwrap() = nr_tasks.to_string();
         }
 
-        if job_argument.meta_arguments.contains_key("<ACCOUNT>") {
+        if ! job_argument.meta_arguments.contains_key("<ACCOUNT>") {
             job_argument.meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
         }
 
@@ -182,10 +182,8 @@ impl JobHandler{
         let _ = ssh::send_files(&temp_exp_path.join(Path::new("*")).to_str().unwrap(), &titan_path.to_str().unwrap());
     }
 
-    pub fn collect_jobs(&mut self) {
-        let job_path = Path::new("/tmp/my_experiment");
-        let experiment_json_path = job_path.join(EXPERIMENT_DB_NAME);
-        let mut jobs = get_job_map(&experiment_json_path).unwrap();
+    pub fn collect_jobs(&mut self, experiment_map_file: &Path) {
+        let mut jobs = get_job_map(&experiment_map_file).unwrap();
 
         self.all = false;
         self.completed = None;
@@ -208,14 +206,14 @@ impl JobHandler{
         let mut failed_jobs = jobs.clone();
         failed_jobs.keep_failed_task();
 
-        if jobs.job_arguments.len() > 0 {
+        if failed_jobs.job_arguments.len() > 0 {
             self.retry_jobs(&mut failed_jobs);
             failed_jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::SUBMITTED);
 
             jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::RETRIED);
             jobs.job_arguments.append(&mut failed_jobs.job_arguments);
         }
-        let _ = write_submit_job_map(&jobs, &experiment_json_path);
+        let _ = write_submit_job_map(&jobs, &experiment_map_file);
     }
 
     fn retrieve_result(&self, benchmark_argument: &mut BenchmarkArgument, bench_job_id: &str, host_dst_path: &Path) {
@@ -228,12 +226,19 @@ impl JobHandler{
         let _ = ssh::untar(&tar_file_path, &dst_path, true);
         
         benchmark_argument.status = 
-            if test_job::job_succeed(&dst_path) {JobStatus::DONE}
-            else {JobStatus::FAILED}
+            if test_job::job_succeed(&dst_path) {
+                println!("Experiment {bench_job_id} was successfully downloaded");
+                JobStatus::DONE
+            } else {
+                println!("Experiment {bench_job_id} did not pass the tests");
+                let _ = ssh::clean_dir(&dst_path);
+                JobStatus::FAILED
+            }
     }
 
     fn retry_jobs(&self, jobs: &mut Arguments) {
         let mut hashes = ssh::get_hash_titan(jobs.job_arguments.len()).into_iter();
+        println!("Failed jobs detected... retyring them.");
 
         for job_argument in &mut jobs.job_arguments {
             self.submit_one_job(job_argument, &hashes.next().unwrap());
