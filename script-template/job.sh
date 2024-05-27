@@ -14,7 +14,11 @@ VM_original=<VM_NAME>
 job_suffix=${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
 
 check_vm_exists() {
-	var=`VBoxManage list vms | grep -c "${VM_original}"`
+	vbox_list=`VBoxManage list vms`
+	while [ $? -ne 0 ]; do
+		vbox_list=`VBoxManage list vms`
+	done
+	var=`echo ${vbox_list} | grep -c "${VM_original}"`
 	if [[ ${var} -eq "0" ]] ; then
 		echo "VirtualBox to create clone from does not exist!" 1>&2
 		wrap_up 0

@@ -169,6 +169,9 @@ impl ParseExperiment{
         let benchmark_parameters = json_value_to_string(&benchmark_suite["sniper_args"], " ");
         let is_binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
         let suite_path = json_value_to_string(&benchmark_suite["suite_path"],"");
+        let suit_build = if benchmark_suite.has_key("build_cmd") {
+            Some(format!("\"{}\"", json_value_to_string(&benchmark_suite["build_cmd"], " ")))
+        } else { None };
 
         for benchmark in benchmark_suite["benchmarks"].members(){
             let benchmark_path = if benchmark.has_key("bench_path") {
@@ -177,8 +180,13 @@ impl ParseExperiment{
                 suite_path.to_string()
             };
 
-            let benchmark_build = if benchmark.has_key("build_cmd") {
+            let mut benchmark_build_path = &benchmark_path;
+
+            let benchmark_build: String = if benchmark.has_key("build_cmd") {
                 format!("\"{}\"", json_value_to_string(&benchmark["build_cmd"], " "))
+            } else if let Some(build_str) = &suit_build { //Default to suite-path to build benchmark if not present for benchmark
+                benchmark_build_path = &suite_path;
+                build_str.clone()
             } else {
                 String::from("make")
             };
@@ -208,7 +216,7 @@ impl ParseExperiment{
 
             for run_idx in 0..nr_runs {
                 let arguments = HashMap::from([
-                    (String::from("<BENCH_DIR>"), benchmark_path.clone()),
+                    (String::from("<BENCH_BUILD_DIR>"), benchmark_build_path.clone()),
                     (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
                     (String::from("<SETUP_CMD>"), setup_cmd.clone()),
                     (String::from("<ARGUMENTS>"), all_arguments.clone())
