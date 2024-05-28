@@ -1,9 +1,12 @@
 #!/bin/env python3
 
-import process_data
+# To install the process_scripts you need to run `pip3 install ~/path/to/process_scripts/`
+# and for this script `pip3 install scipy` too.
+
+from process_scripts import process_data
+from process_scripts.graph_parameters import *
 import pandas
 import numpy as np
-from graph_parameters import *
 import seaborn as sns
 from scipy.stats.mstats import hmean
 try:
@@ -66,6 +69,7 @@ metrics = [
     },
     ]
 
+# Fetch the data from the database, and save it in a pandas file
 data_baseline: pandas.DataFrame = process_data.get_values_pandas(f"{HOME}/raw/baseline_spec", metrics, force_remake = False)
 data_baseline = process_data.make_ipc(data_baseline)
 data_baseline.loc[data_baseline.loc[:, "in_order"] == "true", 'cpu_type'] = "in order"
@@ -78,7 +82,7 @@ data_svr.loc[:, "cpu_type"] = data_svr.loc[:, "cpu_type"].str.cat(data_svr.loc[:
 
 data = pandas.concat([data_baseline, data_svr], ignore_index=True)
 
-#get harmonic mean
+# Rename the data for better names
 data = pandas.concat([data_baseline, data_svr])
 better_names = {
         "in-order": "in order",
@@ -87,6 +91,7 @@ better_names = {
         }
 data.loc[:, "cpu_type"] = data.loc[:, "cpu_type"].replace(better_names)
 
+# Get harmonic mean
 data_processed = data[(data["objectname"] == "IPC") & (data["core_id"] == -1)]
 data_processed = data_processed.fillna(0)
 data_processed = data_processed.pivot_table(index=["benchmark", "cpu_type", "max_prefetch_dist"], columns=["metricname"], values="mean")
@@ -99,9 +104,14 @@ print(h_mean)
 data_processed = pandas.concat([data_processed.reset_index(), h_mean])
 
 # Normalize the data
-data_processed.loc[:, "IPC"] = data_processed.loc[:, "IPC"].div(data_processed.loc[data_processed.loc[:, "cpu_type"] == "in order", "IPC"].values[0])
+def norm_group(group):
+    group.loc[:, "norm IPC"] = group.loc[:, "IPC"] / group.loc[group.loc[:, "cpu_type"] == "in order", "IPC"].values[0]
+    return group
+data_processed = data_processed.groupby("benchmark").apply(norm_group, include_groups=False).reset_index()
 
+benchmark_order = np.append(np.sort(np.unique(data_processed["benchmark"].to_numpy())), "H-mean")
 
+# Plot the data
 rank_order = ["in order", "SVR 16", "out of order"]
 fig, sns_ax = plt.subplots(figsize=(7, 2.16))# page_figsize)
 
@@ -109,7 +119,7 @@ sns_ax = sns.barplot(
     ax=sns_ax,
     data = data_processed,
     x= "benchmark",
-    y= "IPC",
+    y= "norm IPC",
     errorbar=None,
     hue = "cpu_type",
     hue_order = rank_order,
@@ -123,10 +133,10 @@ handles, labels = sns_ax.get_legend_handles_labels()
 sns_ax.legend(ncols=len(rank_order), loc='lower center', bbox_to_anchor=(0.5, 1.02))
 
 sns_ax.set_xlabel("")
-sns_ax.set_ylabel("IPC")
+sns_ax.set_ylabel("normalized IPC")
  
 sns_ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator(y_minor_ndivs))
 sns_ax.set_xticks(sns_ax.get_xticks())
 sns_ax.set_xticklabels(sns_ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor') #to rotate labels
 sns_ax.grid(which="minor", axis="y", linestyle='--')
-plt.savefig(f"{SAVE_HOME}/spec_SVR_unnormalized.pdf", bbox_inches='tight')
+plt.savefig(f"{SAVE_HOME}/spec_norm_SVR.pdf", bbox_inches='tight')
