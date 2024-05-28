@@ -16,3 +16,12 @@ Cargo.lock
 # Other project stuff
 .id
 output*
+
+# Python stuff
+env/
+__pycache__/
+build
+*.egg-info/
+
+#VIM stuff
+Session.vim
