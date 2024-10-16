@@ -47,7 +47,7 @@ build() {
       cd $1
     
       gcc --version
-      python --version
+      python3 --version
     
       lock x || error_exit "Could not lock directory before make operation!"
     
@@ -56,6 +56,8 @@ build() {
         # if the make operation succeeded, mark this folder as built
         touch .built
       fi
+
+      chown -R slurmslave:slurmslave $1
     
       lock u || error_exit "Could not unlock directory after make operation!"
     else
@@ -78,6 +80,8 @@ cd ${RUN_DIR}
 # MODIFY SNIPER COMMAND LINE HERE
 <SETUP_CMD>
 ${SNIPER_DIR}/run-sniper -d ${RUN_DIR} <ARGUMENTS>
+
+chown -R slurmslave:slurmslave .
 
 # finish
 date > ${RUN_DIR}/finished

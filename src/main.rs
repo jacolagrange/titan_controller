@@ -143,10 +143,16 @@ pub fn main() {
     } else if let Some(titan_obj) = args.submit {
         match titan_obj {
             TitanObject::VM => {
-                stat::upload_vm(Path::new(&args.path.unwrap()[0]));
+                if let Some(paths) = args.path {
+                    let dockerfile_path = Path::new(&paths[0]);
+                    stat::upload_dockerfile(dockerfile_path);
+                }
             }
             TitanObject::Trace => {
-                stat::upload_vm(Path::new(&args.path.unwrap()[0]));
+                if let Some(paths) = args.path {
+                    let trace_path = Path::new(&paths[0]);
+                    stat::upload_trace(trace_path);
+                }
             }
             TitanObject::Job => {
                 let s = JobHandler::new(creds, false, None);

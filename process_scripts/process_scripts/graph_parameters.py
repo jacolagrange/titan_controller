@@ -34,6 +34,7 @@ custom_rcparams = {
     'legend.fontsize': legendfontsize,
     'legend.handleheight': handleheight,
     'legend.handlelength': handlelength,
+    'patch.linewidth': 0.5,
     'legend.frameon': False,
     'axes.grid.which': "both",
 }

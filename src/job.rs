@@ -160,7 +160,7 @@ impl JobHandler{
     }
 
     /*
-     * Takes a vecotr of experiments, and apply the template to them and finally sends all the
+     * Takes a vector of experiments, and apply the template to them and finally sends all the
      * files to Titan.
      */
     fn submit_experiment(&self, job_argument: &mut JobArgument, job_nr: &str) {

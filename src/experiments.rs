@@ -7,6 +7,30 @@ use std::path::Path;
 use std::collections::HashMap;
 use crate::constants::EXPERIMENT_DB_NAME;
 use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
+use std::str::FromStr;
+
+enum ExperimentType{
+    BINARY,
+    TRACE,
+    PINBALL
+}
+
+impl FromStr for ExperimentType {
+    type Err = ();
+    fn from_str(input: &str) -> Result<ExperimentType, Self::Err> {
+        match input.to_lowercase().as_str() {
+            "binary" | "binaries" => Ok(ExperimentType::BINARY),
+            "trace" | "traces" => Ok(ExperimentType::TRACE),
+            "pinball" | "pinballs" => Ok(ExperimentType::PINBALL),
+            _ => Err(())
+        }
+    }
+}
+
+enum VmType {
+    VBOX,
+    DOCKER
+}
 
 #[derive(Debug)]
 pub struct ParseExperiment{
@@ -34,14 +58,17 @@ impl ParseExperiment{
     pub fn get_arguments(&self) -> Arguments {
         let mut job_args = Vec::new();
         let job_git_repos: String = self.get_git_repos(&self.exp);
-        let job_mounts: String = self.get_vm_mounts(&self.exp);
+        let job_mounts_vbox: String = self.get_vm_mounts(&self.exp, VmType::VBOX);
+        let job_mounts_docker: String = self.get_vm_mounts(&self.exp, VmType::DOCKER);
 
         for suite in self.bench["suites"].members() {
             let mut git_repos: String = self.get_git_repos(&suite);
             git_repos.push_str(&job_git_repos);
 
-            let mut mounts: String = self.get_vm_mounts(&suite);
-            mounts.push_str(&job_mounts);
+            let mut mounts_vbox: String = self.get_vm_mounts(&suite, VmType::VBOX);
+            mounts_vbox.push_str(&job_mounts_vbox);
+            let mut mounts_docker: String = self.get_vm_mounts(&suite, VmType::DOCKER);
+            mounts_docker.push_str(&job_mounts_docker);
 
             let job_vals = &self.exp["job"];
 
@@ -58,7 +85,8 @@ impl ParseExperiment{
                 //(String::from("<TASKS>"),     total_jobs.to_string()),
                 (String::from("<VM_NAME>"),   json_value_to_string(&job_vals["vm_name"],"")),
                 (String::from("<GIT-REPOSITORIES>"), git_repos),
-                (String::from("<MOUNTS>"),    mounts),
+                (String::from("<Virtualbox_MOUNTS>"),    mounts_vbox),
+                (String::from("<DOCKER_MOUNTS>"),    mounts_docker),
             ]);
 
             let experiment_arguments = self.get_exp_arguments(&suite, nr_runs);
@@ -105,14 +133,18 @@ impl ParseExperiment{
         return git_repos;
     }
 
-    fn get_vm_mounts(&self, args_obj: &json::JsonValue) -> String {
+    fn get_vm_mounts(&self, args_obj: &json::JsonValue, vm_type: VmType) -> String {
         let mut vm_mounts = String::new();
         //First mount the git repos
         if args_obj.has_key("git"){
             for (repo, _) in args_obj["git"].entries() {
                 let repo_name = repo.strip_suffix("_branch").unwrap();
                 let repo_name_upper = repo_name.to_uppercase();
-                let _ = write!(vm_mounts, "mount_vbox {repo_name}_mount /home/slurmslave/{repo_name}/${{{repo_name_upper}_GIT_ID}}\n");
+                let mount_str: String = match vm_type{
+                    VmType::VBOX => format!("mount_vbox {repo_name}_mount /home/slurmslave/{repo_name}/${{{repo_name_upper}_GIT_ID}}\n"),
+                    VmType::DOCKER => format!("-v /home/slurmslave/{repo_name}/${{{repo_name_upper}_GIT_ID}}:${{{repo_name}_mount}} \\\n\t"),
+                };
+                let _ = write!(vm_mounts, "{}", mount_str);
             }
         }
 
@@ -121,7 +153,11 @@ impl ParseExperiment{
             for (mnt_name, host_path) in args_obj["vm_mount"].entries() {
                 let host_path_str = host_path.as_str().unwrap();
                 if host_path_str.to_lowercase() == "none" {continue;}
-                let _ = write!(vm_mounts, "mount_vbox {mnt_name} {host_path}\n");
+                let mount_str: String = match vm_type{
+                    VmType::VBOX => format!("mount_vbox {mnt_name} {host_path}\n"),
+                    VmType::DOCKER => format!("-v {host_path}:${{{mnt_name}}} \\\n\t"),
+                };
+                let _ = write!(vm_mounts, "{}", mount_str);
             }
         }
 
@@ -167,7 +203,8 @@ impl ParseExperiment{
         let mut benchmark_arguments = Vec::new();
 
         let benchmark_parameters = json_value_to_string(&benchmark_suite["sniper_args"], " ");
-        let is_binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
+        //let is_binary = json_value_to_string(&benchmark_suite["type"],"") == "binaries";
+        let experiment_type = ExperimentType::from_str(&json_value_to_string(&benchmark_suite["type"],"")).unwrap();
         let suite_path = json_value_to_string(&benchmark_suite["suite_path"],"");
         let suit_build = if benchmark_suite.has_key("build_cmd") {
             Some(format!("\"{}\"", json_value_to_string(&benchmark_suite["build_cmd"], " ")))
@@ -197,17 +234,28 @@ impl ParseExperiment{
                 String::new()
             };
 
-            let benchmark_str = if is_binary {
-                let binary_str = json_value_to_string(&benchmark["binary"],"");
-                let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
-                format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_str} {benchmark_args}")
-            } else {
-                let mut trace_vec = Vec::new();
-                for trace_str in benchmark["traces"].members(){
-                    trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_str,"")));
+            let benchmark_str = match experiment_type {
+                ExperimentType::BINARY => {
+                    let binary_str = json_value_to_string(&benchmark["binary"],"");
+                    let benchmark_args = json_value_to_string(&benchmark["arguments"], " ");
+                    format!("-- ${{BENCHMARKS_DIR}}/{benchmark_path}/{binary_str} {benchmark_args}")
+                } 
+                ExperimentType::TRACE => {
+                    let mut trace_vec = Vec::new();
+                    for trace_str in benchmark["traces"].members(){
+                        trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_str,"")));
+                    }
+                    let traces_string = trace_vec.join(",");
+                    format!("--traces={traces_string}")
                 }
-                let traces_string = trace_vec.join(",");
-                format!("--traces={traces_string}")
+                ExperimentType::PINBALL => {
+                    let mut trace_vec = Vec::new();
+                    for trace_str in benchmark["pinballs"].members(){
+                        trace_vec.push(format!("${{TRACES_DIR}}/{benchmark_path}/{}", json_value_to_string(trace_str,"")));
+                    }
+                    let traces_string = trace_vec.join(",");
+                    format!("--pinballs={traces_string}")
+                }
             };
 
             let benchmark_name = json_value_to_string(&benchmark["name"], "");

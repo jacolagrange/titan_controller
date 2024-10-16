@@ -8,6 +8,7 @@ pub fn send_command(command: &str) -> (String, String){
         .expect("ssh command failed");
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
+    println!("{:?} {:?}", stdout, stderr);
     (stdout, stderr)
 }
 
@@ -20,6 +21,7 @@ pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> 
     if output.stderr.len() > 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }
+    println!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
     Ok(())
 }
 
@@ -31,6 +33,7 @@ pub fn get_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
     if output.stderr.len() > 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }
+    println!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
     Ok(())
 }
 

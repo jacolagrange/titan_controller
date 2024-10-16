@@ -10,34 +10,24 @@
 #SBATCH --array=1-<TASKS>
 # #SBATCH --tmp=15G #need to update the slurm.conf to be able to reserve some TmpDisk space
 
-VM_original=<VM_NAME>
+readonly sniper_mount="/mnt/sniper"
+readonly benchmarks_mount="/mnt/benchmarks"
+readonly input_mount="/mnt/input"
+readonly traces_mount="/mnt/traces"
+
+original_image=<VM_NAME>
 job_suffix=${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
 
-check_vm_exists() {
-	vbox_list=`VBoxManage list vms`
+check_image_exists() {
+	vbox_list=`docker image ls`
 	while [ $? -ne 0 ]; do
-		vbox_list=`VBoxManage list vms`
+		vbox_list=`docker image ls`
 	done
-	var=`echo ${vbox_list} | grep -c "${VM_original}"`
+	var=`echo ${vbox_list} | grep -c "${original_image}"`
 	if [[ ${var} -eq "0" ]] ; then
-		echo "VirtualBox to create clone from does not exist!" 1>&2
+		echo "Docker image does not exist!" 1>&2
 		wrap_up 0
 	fi
-}
-
-check_and_wait_for_disk_space() {
-	space_needed_in_byte=$(du -s ~/virtualbox/${VM_original} | cut -f 1)
-	fails=0
-	while [ $(( $space_needed_in_byte * 5 )) -ge $(df . --output="avail" | tail -n 1) ]; do
-		echo "Not enough space left on disk, waiting" 1>&2
-		sleep 600 #10mins
-		((fails+=1))
-		if [ $fails -ge 18 ]; then
-			echo "Waited for 3h, still no disk space, aborting job" 1>&2
-			wrap_up 0
-		fi
-	done
-
 }
 
 wrap_up() {
@@ -105,8 +95,7 @@ checkout_git_repo() {
 	echo "Branch git-id is $GIT_ID."
 	if [ ! -d ../$GIT_ID ]; then
 		# make a directory with the git id as name and copy the branch source code there
-		mkdir ../$GIT_ID
-		git archive --format=tar --prefix=$GIT_ID/ HEAD | (cd .. && tar xf -)
+		cp -r ../master ../$GIT_ID
 		echo `date +"%d-%m-%y"` > ../$GIT_ID/.last_used.txt
 	else
 		echo `date +"%d-%m-%y"` > ../$GIT_ID/.last_used.txt
@@ -124,34 +113,10 @@ checkout_git_repo() {
 	cd ~
 }
 
-#Arguments: mount_name host-path
-mount_vbox() {
-	echo "Mounting $1 on hostpath $2"
-	VBoxManage sharedfolder add "${VM_name}" --name $1 --hostpath $2
-	VBoxManage setextradata "${VM_name}" VBoxInternal2/SharedFoldersEnableSymlinksCreate/$1 1
-}
-
-shutdown_VM () {
-	# stop VM
-	echo "Stopping and cleaning up VM."
-	VBoxManage controlvm "${VM_name}" poweroff
-	
-	# wait until the VM is not running anymore
-	VM_running=""
-	while [ -n "${VM_running}" ]; do
-		VM_running=`VBoxManage list runningvms | grep "${VM_name}"`
-		sleep 10
-	done
-}
-
 HOSTNAME=`hostname`
 echo "Running on machine ${HOSTNAME}."
 
-check_vm_exists
-check_and_wait_for_disk_space
-
-# cd ${TMPDIR}
-# echo "TMPDIR is ${TMPDIR}"
+check_image_exists
 
 # checkout (multiple) git repositories if necessary
 # eg.: checkout_git_repo ~/sniper/master my-branch
@@ -175,57 +140,22 @@ working_dir=`pwd`
 
 # copy the job and execute script from the command node, implement while sleep to make sure they are already copied
 echo "Copying execution files."
-# copy_with_retry_from_bacchus ~/jobs/submitted/job_${job_suffix}.sh job.sh
 cp $0 job.sh
 copy_with_retry_from_bacchus ~/jobs/submitted/execute_${job_suffix}.sh execute.sh
+chmod +x execute.sh
 
-# clone relevant VM and register
-echo "Cloning and setting up VM."
-VM_name="${VM_original}_${SLURM_JOB_ID}"
-# VBoxManage clonevm "${VM_original}" --basefolder "${TMPDIR}" --name "${VM_name}" --register
-VBoxManage clonevm "${VM_original}" --basefolder virtualbox --name "${VM_name}" --register
-sleep 1 #wait a bit for the VM to properly register
-
-# modify the number of cores the VM has access to
-VBoxManage modifyvm "${VM_name}" --cpus <CORES>
-# modify the memory the VM has access to
-VBoxManage modifyvm "${VM_name}" --memory <MEMORY>
-# add directory as the output directory for the VM and source dir for the execute.sh script
-mount_vbox run_mount ${working_dir}
-<MOUNTS>
-
-# start vm, this automatically starts the execution of execute.sh
-echo "Starting VM."
-VBoxManage startvm "${VM_name}" --type headless
-
-# wait loop for job
-waiting_started=0
-tries=0
-while [ ! -f ${working_dir}/finished ]; do
-	if [ ${waiting_started} -gt 600 ] ; then #waiting for 10mins for VM to start. If not started by then, the VM did not start properly
-		if [ ! -f ${working_dir}/started ] ; then
-			echo "VirtualBox did not start properly, trying again"
-			shutdown_VM
-			
-			if [ ${tries} -ge 3 ] ; then
-				echo "3 tries failed, abandoning"
-				break
-			fi
-
-			VBoxManage startvm "${VM_name}" --type headless
-			waiting_started=0
-			((tries+=1))
-			
-		fi
-	fi
-	sleep 10
-	((waiting_started+=10))
-done
-
-shutdown_VM
-
-# delete VM
-VBoxManage unregistervm --delete "${VM_name}"
+container_name="${original_image}_${job_suffix}"
+echo "Starting container."
+#To allow sniper to pull all the submodules, copy files etc. Mount /mnt/perflab as read only
+docker run --name ${container_name} \
+	--rm \
+	--user root \
+	-v ${working_dir}:/mnt/run \
+	-w /mnt/run \
+	-v /mnt/perflab:/mnt/perflab:ro \
+	<DOCKER_MOUNTS>--cpus=<CORES> \
+	--memory=<MEMORY>m \
+	${original_image} /mnt/run/execute.sh
 
 # archive the results and copy them to the control node
 wrap_up 1
