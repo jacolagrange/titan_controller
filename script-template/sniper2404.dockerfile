@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
     libsqlite3-dev \
     zlib1g-dev \
     libbz2-dev \
-    libdb++-dev \
+    liblmdb-dev \
  && rm -rf /var/lib/apt/lists/* &&\
  apt-get update && apt-get install -y \
     autoconf \
