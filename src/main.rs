@@ -57,6 +57,9 @@ struct Args{
 
     #[arg(short, long, requires = "Gdelete")]
     name: Option<String>,
+
+    #[arg(long, requires = "Gsubmit")]
+    dry: bool
 }
 
 //Clap bug? -> Had to encapsulate the vec inside a struct
@@ -160,7 +163,7 @@ pub fn main() {
                 if paths.len() >= 2 {
                     let experiment_path = &paths[0];
                     let benchmarks_path = &paths[1];
-                    s.submit_job(experiment_path, benchmarks_path);
+                    s.submit_job(experiment_path, benchmarks_path, &args.dry);
                 } else {
                     eprintln!("You need to provide an experiment and an benchmarks path to submit a Job");
                 }
