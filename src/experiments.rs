@@ -4,7 +4,7 @@ use std::io::Read;
 use std::io::Write as IoWrite;
 use std::fmt::Write;
 use std::path::Path;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::constants::EXPERIMENT_DB_NAME;
 use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
 use std::str::FromStr;
@@ -282,23 +282,37 @@ impl ParseExperiment{
         return benchmark_arguments;
     }
 
+    // Get the key of the first parameter-set, assuming those are present in the other sets as well
+    // Returns a vector of all the keys of the parameter-values.
     fn get_sniper_argument_keys(&self) -> Vec<String> {
-        let param_values = &self.exp["sniper_parameters"]["param_values"];
+        //Assume there is at least one element in the "parameters" array
+        let param_values = &self.exp["sniper_parameters"]["parameters"][0]["values"];
         let mut keys: Vec<String> = Vec::new();
         for (key, _) in param_values.entries() {keys.push(key.to_string());}
         return keys;
     }
 
+    // Makes a vector of all the combinations of key-value pairs (i.e. all the experiments) that
+    // sniper needs to run. This is done according to the mix-value
     fn get_sniper_arguments(&self, sniper_arg_keys: &Vec<String>) -> Vec<HashMap<String, String>> {
         let mut sniper_args = Vec::new();
-        //let arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
-        let param_values = &self.exp["sniper_parameters"]["param_values"];
-        let param_combinations = create_all_param_values(sniper_arg_keys, &param_values);
+        let mut seen = HashSet::new();
 
-        for combination in param_combinations {
-            let arg = HashMap::from_iter(std::iter::zip(sniper_arg_keys.clone(), combination));
-            sniper_args.push(arg);
+        for param_value in self.exp["sniper_parameters"]["parameters"].members() {
+            let param_combinations = match json_value_to_string(&param_value["mix"], "").to_lowercase().as_str() {
+                "product" => create_parameter_product_mix(sniper_arg_keys, &param_value["values"]),
+                "single" => create_parameter_single_mix(sniper_arg_keys, &param_value["values"]),
+                _ => Vec::<Vec<String>>::new(),
+            };
+
+            for combination in param_combinations {
+                if seen.insert(combination.clone()) {
+                    let arg = HashMap::from_iter(std::iter::zip(sniper_arg_keys.clone(), combination));
+                    sniper_args.push(arg);
+                }
+            }
         }
+
         return sniper_args;
     }
 
@@ -337,7 +351,7 @@ pub fn write_submit_job_map(job_arguments: &Arguments, host_dst_path: &Path) -> 
 /* Function that creates all the possible combinations of values
  * Output is a vector of each combination, and a combination is a vector of the string combinations
  */
-fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
+fn create_parameter_product_mix(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
     if keys.is_empty() {return Vec::new();}
 
     let key = &keys[0];
@@ -347,7 +361,7 @@ fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<
             combinations.push(vec![json_value_to_string(&key_value, "")]);
         }
     } else {
-        let next_values = create_all_param_values(&keys[1..], values);
+        let next_values = create_parameter_product_mix(&keys[1..], values);
 
         for key_value in values[key].members() {
             for next_value in &next_values {
@@ -357,6 +371,27 @@ fn create_all_param_values(keys: &[String], values: &json::JsonValue) ->Vec<Vec<
             }
         }
     }
+    return combinations;
+}
+
+fn create_parameter_single_mix(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
+    if keys.is_empty() {return Vec::new();}
+
+    let mut combinations = Vec::new();
+    let mut default_values = Vec::new();
+    for key in keys {
+        default_values.push(json_value_to_string(&values[key][0], ""));
+    }
+    combinations.push(default_values.clone());
+
+    for (i, key) in keys.iter().enumerate() {
+        let mut new_combination = default_values.clone();
+        for key_value in values[key].members().skip(1) {
+            new_combination[i] = json_value_to_string(&key_value, "");
+            combinations.push(new_combination.clone());
+        }
+    }
+
     return combinations;
 }
 
