@@ -10,13 +10,29 @@ pub fn print_vms() {
     else {println!("{}", stdout);}
 }
 
-pub fn upload_vm(vm_path: &Path) {
-    let destination = Path::new("/home/slurmaslave/virtualbox/");
-    println!("Uploading VM to bacchus");
-    let _ = ssh::send_files(vm_path.to_str().unwrap(), destination.to_str().unwrap());
-    println!("Distributing to other nodes");
-    let command = format!("/home/slurmadmin/scripts/distribute_VM.py {}/{}", destination.to_str().unwrap(), vm_path.file_name().unwrap().to_str().unwrap());
-    ssh::send_command(&command);
+// pub fn upload_vm(vm_path: &Path) {
+//     let destination = Path::new("/home/slurmaslave/virtualbox/");
+//     println!("Uploading VM to bacchus");
+//     let _ = ssh::send_files(vm_path.to_str().unwrap(), destination.to_str().unwrap());
+//     println!("Distributing to other nodes");
+//     let command = format!("/home/slurmadmin/scripts/distribute_VM.py {}/{}", destination.to_str().unwrap(), vm_path.file_name().unwrap().to_str().unwrap());
+//     ssh::send_command(&command);
+// }
+
+pub fn upload_dockerfile(dockerfile_path: &Path) {
+    let destination = Path::new("/home/slurmslave/Dockerfiles/");
+    println!("Uploading Dockerfile to bacchus");
+    let _ = ssh::send_files(dockerfile_path.to_str().unwrap(), destination.to_str().unwrap());
+    let mut container_name = String::from(dockerfile_path.file_stem().unwrap().to_str().unwrap());
+    container_name = container_name.to_lowercase().replace("dockerfile", "").trim_matches('_').to_string().trim_matches('-').to_string();
+    if !container_name.is_empty() {
+        println!("Distributing {container_name} to other nodes");
+        let remote_file_path = destination.join(dockerfile_path.file_name().unwrap());
+        let command = format!("for node in {{01..16}}; do scp {remote_file_path_str} titan${{node}}:{remote_file_path_str}; ssh titan${{node}} 'docker build --no-cache -t {container_name} -f {remote_file_path_str} {destination_str}' & done", remote_file_path_str = remote_file_path.to_str().unwrap(), destination_str = destination.to_str().unwrap());
+        ssh::send_command(&command);
+    } else {
+        eprintln!("Error the container name is empty, please name you file such as dockerfile_your_name!");
+    }
 }
 
 fn get_active_nodes() -> Vec<usize> {

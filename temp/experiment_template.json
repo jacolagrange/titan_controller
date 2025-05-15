@@ -3,11 +3,11 @@
 		"name":"test",
 		"core_per_experiment":1,
 		"mem_per_core":2048,
-		"vm_name":"sniper2204",
+		"vm_name":"sniper2404",
 		"runs":1
 	},
 	"git":{
-		"sniper_branch":"jaime-IOVR"
+		"sniper_branch":"jaime-SVR"
 	},
 	"vm_mount":{
 		"input_mount":"None"
@@ -25,25 +25,12 @@
 			"-g", "--perf_model/core/rob_timer/run_ahead/unrolling=false",
 			"-s", "stop-by-icount:2000000"
 		],
-		"parameters": [{
-			"mix": "product",
-			"description":"product will generate all possible combinations of parameters below.",
-			"values": {
-				"in_order":["true"],
-				"timer":["piggy-bagging"],
-				"micro_vector_size":[1, 2],
-				"max_prefetch_dist":[8, 16, 32, 64, 128]
-			}
-		},{
-			"mix": "single",
-			"description":"single will vary only one parameter at the time and will use the first parameter as the default.",
-			"values": {
-				"in_order":["true"],
-				"timer":["piggy-bagging"],
-				"micro_vector_size":[1, 2],
-				"max_prefetch_dist":[8, 16, 32, 64, 128]
-			}
-		}]
+		"param_values": {
+			"in_order":["true"],
+			"timer":["piggy-bagging"],
+			"micro_vector_size":[1],
+			"max_prefetch_dist":[16]
+		}
 	},
 	"host_destination_path":"/tmp/my_experiment"
 }

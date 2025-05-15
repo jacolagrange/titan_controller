@@ -103,7 +103,7 @@ impl JobHandler{
         }
     }
 
-    pub fn submit_job(&self, experiment_path: &str, benchmark_path: &str) {
+    pub fn submit_job(&self, experiment_path: &str, benchmark_path: &str, dry_run: &bool) {
         //Get experiments parameters
         let experiment_path = Path::new(experiment_path);
         let benchmark_path = Path::new(benchmark_path);
@@ -111,12 +111,15 @@ impl JobHandler{
         let mut repl_maps = experiment.get_arguments();
 
 
-        //Obtain a unique hash from the server
-        let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len()).into_iter();
+        if ! dry_run {
+            //Obtain a unique hash from the server
+            let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len()).into_iter();
 
-        for job_argument in &mut repl_maps.job_arguments {
-            self.submit_one_job(job_argument, &hashes.next().unwrap());
+            for job_argument in &mut repl_maps.job_arguments {
+                self.submit_one_job(job_argument, &hashes.next().unwrap());
+            }
         }
+
         let _ = experiment.create_submit_job_map(&repl_maps);
     }
 
@@ -160,7 +163,7 @@ impl JobHandler{
     }
 
     /*
-     * Takes a vecotr of experiments, and apply the template to them and finally sends all the
+     * Takes a vector of experiments, and apply the template to them and finally sends all the
      * files to Titan.
      */
     fn submit_experiment(&self, job_argument: &mut JobArgument, job_nr: &str) {

@@ -11,7 +11,7 @@ import importlib.util
 
 from typing import List, Dict, Tuple
 
-SNIPER_PATH="/home/jaime/sniperAFS/sniper"
+SNIPER_PATH="/home/jaime/Documents/sniperAFS/sniper"
 
 # ------------------------------- SET UP FOR ALL SQL RELATED METHODS -------------------------------------
 
@@ -204,7 +204,7 @@ def get_McPat(experience_path: pathlib.Path, desired_metrics: List[Dict[str, obj
     return values
 
 
-CPI_SCRIPT_PATH = "{SNIPER_PATH}/tools/cpistack.py"
+CPI_SCRIPT_PATH = f"{SNIPER_PATH}/tools/cpistack.py"
 def get_CPI_stack(experience_path: pathlib.Path, desired_metrics: List[Dict[str, object]]):
     if not any([metric["where"] == "CPI-stack" for metric in desired_metrics]):
         return []
@@ -293,7 +293,7 @@ def _get_raw_values_of_version(exp_path: pathlib.Path, metrics, extra_files: Lis
         
                 # get the simulation time value
                 sim_time_path_file = None
-                titan_out = exp_nr.joinpath("stdout_VM.txt")
+                titan_out = exp_nr.joinpath("stdout_vm.txt")
                 local_out = exp_nr.joinpath("output.txt")
                 if titan_out.exists():
                     sim_time_path_file = titan_out

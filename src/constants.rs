@@ -1,6 +1,6 @@
 pub static ID_FILE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/.id"));
 
-pub static JOB_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/script-template/job.sh"));
+pub static JOB_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/script-template/job_docker.sh"));
 pub static EXECUTE_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/script-template/execute_Sniper.sh"));
 
 pub static EXPERIMENT_DB_NAME: &str = "experiments.json";

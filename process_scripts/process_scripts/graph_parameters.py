@@ -24,6 +24,7 @@ handlelength = handleheight
 
 #https://stackoverflow.com/questions/3899980/how-to-change-the-font-size-on-a-matplotlib-plot
 custom_rcparams = {
+    'text.usetex': True,
     'font.size': fontsize,
     'figure.titlesize': fontsize,
     'axes.labelsize': axfontsize,
@@ -34,6 +35,7 @@ custom_rcparams = {
     'legend.fontsize': legendfontsize,
     'legend.handleheight': handleheight,
     'legend.handlelength': handlelength,
+    'patch.linewidth': 0.5,
     'legend.frameon': False,
     'axes.grid.which': "both",
 }
