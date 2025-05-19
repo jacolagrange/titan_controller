@@ -155,7 +155,7 @@ docker run --name ${container_name} \
 	-v /mnt/perflab:/mnt/perflab:ro \
 	<DOCKER_MOUNTS>--cpus=<CORES> \
 	--memory=<MEMORY>m \
-	${original_image} /mnt/run/execute.sh
+	${original_image} /mnt/run/execute.sh > "${working_dir}/stdout_vm.txt" 2> "${working_dir}/stderr_vm.txt"
 
 # archive the results and copy them to the control node
 wrap_up 1
