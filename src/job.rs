@@ -197,10 +197,18 @@ impl JobHandler{
             for experiment_argument in &mut job_argument.experiment_arguments {
                 for benchmark_argument in &mut experiment_argument.benchmarks {
                     if benchmark_argument.status != JobStatus::SUBMITTED {continue;}
-                    let bench_job_id = format!("{}_{}", job_argument.job_nr.as_ref().unwrap(), benchmark_argument.task_idx.unwrap());
-                    if ! titan_job_ids.contains(&bench_job_id) {
-                        let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name);
-                        self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path);
+                    match(job_argument.job_nr.as_ref(), benchmark_argument.task_idx){
+                        (Some(job_nr), Some(task_idx)) => {
+                            let bench_job_id = format!("{}_{}", job_nr, task_idx);
+                            if ! titan_job_ids.contains(&bench_job_id) {
+                                let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name);
+                                self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path);
+                            }
+                        }
+                        _ => {
+                            println!("Could not find the information back about job_id or task_id in the json.");
+                            benchmark_argument.status = JobStatus::FAILED;
+                        }
                     }
                 }
             }
