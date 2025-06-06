@@ -207,7 +207,14 @@ impl JobHandler{
                             let bench_job_id = format!("{}_{}", job_nr, task_idx);
                             if ! titan_job_ids.contains(&bench_job_id) {
                                 let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name);
-                                self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path)?;
+                                let res = self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path);
+                                match res {
+                                    Ok(_) => {}
+                                    Err(_) => {
+                                        println!("Could not retreive job_id {}.", &bench_job_id);
+                                        benchmark_argument.status = JobStatus::FAILED;
+                                    }
+                                }
                             }
                         }
                         _ => {
