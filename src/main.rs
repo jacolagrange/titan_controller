@@ -118,13 +118,34 @@ pub fn main() {
         match titan_obj {
             TitanObject::Job => {
                 let s = JobHandler::new(creds,args.all,args.completed);
-                s.print_jobs();
+                let res = s.print_jobs();
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Error when retreiving the job list: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
             TitanObject::VM => {
-                stat::print_vms();
+                let res = stat::print_vms();
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Error when retreiving the VMS list: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
             TitanObject::Trace => {
-                stat::print_traces();
+                let res = stat::print_traces();
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Error when retreiving the traces: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
         }
     } else if let Some(titan_obj) = args.delete {
@@ -133,11 +154,25 @@ pub fn main() {
             TitanObject::Job => {
                 if let Some(jobids) = args.jobid {
                     let s = JobHandler::new(creds, false, None);
-                    s.delete_jobs(jobids.ids);
+                    let res = s.delete_jobs(jobids.ids);
+                    match res {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Error when deleting JOB: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
             TitanObject::VM => {
-                stat::delete_vm(&args.name.unwrap());
+                let res = stat::delete_vm(&args.name.unwrap());
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Error when deleting vm: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
             _ => {
                 println!("Unsupported feature"); //need to add script on bacchus itself -> to remove from all the nodes
@@ -148,13 +183,27 @@ pub fn main() {
             TitanObject::VM => {
                 if let Some(paths) = args.path {
                     let dockerfile_path = Path::new(&paths[0]);
-                    stat::upload_dockerfile(dockerfile_path);
+                    let res = stat::upload_dockerfile(dockerfile_path);
+                    match res {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Error when uploading dockerfile from path {}: {}", dockerfile_path.display(), e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
             TitanObject::Trace => {
                 if let Some(paths) = args.path {
                     let trace_path = Path::new(&paths[0]);
-                    stat::upload_trace(trace_path);
+                    let res = stat::upload_trace(trace_path);
+                    match res {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Error when uploading trace from path {}: {}", trace_path.display(), e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
             TitanObject::Job => {
@@ -163,7 +212,14 @@ pub fn main() {
                 if paths.len() >= 2 {
                     let experiment_path = &paths[0];
                     let benchmarks_path = &paths[1];
-                    s.submit_job(experiment_path, benchmarks_path, &args.dry);
+                    let res = s.submit_job(experiment_path, benchmarks_path, &args.dry);
+                    match res {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Error when submitting job: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 } else {
                     eprintln!("You need to provide an experiment and an benchmarks path to submit a Job");
                 }
@@ -175,7 +231,14 @@ pub fn main() {
                 let mut s = JobHandler::new(creds, false, None);
                 if let Some(paths) = args.path {
                     let experiment_map_path = Path::new(&paths[0]);
-                    s.collect_jobs(&experiment_map_path);
+                    let res = s.collect_jobs(&experiment_map_path);
+                    match res {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Error when collecting jobs: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 } else {
                     eprintln!("You need to provide a Path with a {} file to download the experiments", EXPERIMENT_DB_NAME);
                 }

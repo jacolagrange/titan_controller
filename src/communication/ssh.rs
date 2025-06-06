@@ -1,15 +1,16 @@
 use std::process::Command;
 use std::path::Path;
 
-pub fn send_command(command: &str) -> (String, String){
+pub fn send_command(command: &str) -> Result<(String, String), std::io::Error>{
     let output = Command::new("ssh")
         .args(["titan", command])
-        .output()
-        .expect("ssh command failed");
+        .output()?;
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
-    println!("{:?} {:?}", stdout, stderr);
-    (stdout, stderr)
+    if stderr.len() > 0 {
+        eprintln!("{:?} {:?}", stdout, stderr);
+    }
+    Ok((stdout, stderr))
 }
 
 pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
@@ -19,9 +20,9 @@ pub fn send_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> 
         .arg(["scp", "-r", src_path, &full_dst].join(" "))
         .output()?;
     if output.stderr.len() > 0 {
+        eprintln!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }
-    println!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
     Ok(())
 }
 
@@ -31,9 +32,9 @@ pub fn get_files(src_path: &str, dst_path: &str) -> Result<(), std::io::Error> {
         .args(["-r", &full_src, dst_path])
         .output()?;
     if output.stderr.len() > 0 {
+        eprintln!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "SCP sending files failed"));
     }
-    println!("{:?} {:?}", String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap());
     Ok(())
 }
 
@@ -59,9 +60,9 @@ pub fn clean_dir(dir_path: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn get_hash_titan(amount: usize) -> Vec<String> {
+pub fn get_hash_titan(amount: usize) -> Result<Vec<String>, std::io::Error> {
     let cmd = format!("for i in $(seq 1 {}); do mktemp; done", amount);
-    let (stdout, _) = send_command(&cmd);
+    let (stdout, _) = send_command(&cmd)?;
 
     let mut hash_vec = Vec::<String>::new();
     let output_lines: Vec<&str> = stdout.split("\n").collect();
@@ -74,7 +75,7 @@ pub fn get_hash_titan(amount: usize) -> Vec<String> {
     }
     
     let rm_cmd = format!("rm {}", output_lines.join(" "));
-    send_command(&rm_cmd);
+    send_command(&rm_cmd)?;
 
-    return hash_vec;
+    return Ok(hash_vec);
 }

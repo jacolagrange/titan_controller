@@ -40,7 +40,7 @@ impl JobHandler{
         JobHandler{creds, all, completed, temp_path}
     }
 
-    fn get_jobs(&self) -> Vec<TitanJobStat> {
+    fn get_jobs(&self) -> Result<Vec<TitanJobStat>, std::io::Error> {
         let (stdout, skip_nr) = 
         if let Some(days) = self.completed {
             lazy_static! {
@@ -53,7 +53,7 @@ impl JobHandler{
             let start_time = OffsetDateTime::now_utc().checked_sub(Duration::days(days as i64)).unwrap();
             let sacct_time_format = format_description::parse("[year]-[month]-[day]").unwrap();
             command += &format!(" -S {} --format=JobID,JobName%150,Account,NCPUS,Submit,State%30", start_time.format(&sacct_time_format).unwrap());
-            let (mut stdout, _stderr) = ssh::send_command(&command);
+            let (mut stdout, _stderr) = ssh::send_command(&command)?;
             stdout = SPACES.replace_all(&stdout, r" ").to_string();
             (stdout, 2)
         } else {
@@ -62,7 +62,7 @@ impl JobHandler{
                 command += &(" -A ".to_owned() + &self.creds.username);
             }
             command += " -o \"%i %j %a %C %M %R\"";
-            let (stdout, _stderr) = ssh::send_command(&command);
+            let (stdout, _stderr) = ssh::send_command(&command)?;
             (stdout, 1)
         };
     
@@ -82,28 +82,30 @@ impl JobHandler{
             };
             jobs.push(t);
         }
-        jobs
+        Ok(jobs)
     }
 
-    pub fn print_jobs(&self) {
-        let jobs = self.get_jobs();
+    pub fn print_jobs(&self) -> Result<(), std::io::Error> {
+        let jobs = self.get_jobs()?;
         println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", "JOBID", "NAME", "ACCOUNT", "CORES", "TIME", "STATE");
         println!("{:-<10} {:-<100} {:-<15} {:-<5} {:-<20} {:-<15}", "", "", "", "", "", "");
         for job in jobs{
             println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", job.job_id, job.name, job.account, job.cores, job.time, job.state);
         }
+        Ok(())
     }
 
 
-    pub fn delete_jobs(&self, job_ids: Vec<usize>){
+    pub fn delete_jobs(&self, job_ids: Vec<usize>) -> Result<(), std::io::Error> {
         for job_id in job_ids {
-            let (stdout, stderr) = ssh::send_command(&format!("/home/slurmadmin/scripts/delete_job.py -j {} -u {} -p {}", job_id, self.creds.username, self.creds.password));
+            let (stdout, stderr) = ssh::send_command(&format!("/home/slurmadmin/scripts/delete_job.py -j {} -u {} -p {}", job_id, self.creds.username, self.creds.password))?;
             if stdout.len() > 0 {println!("{}", stdout);}
             if stderr.len() > 0 {println!("{}", stderr);}
         }
+        Ok(())
     }
 
-    pub fn submit_job(&self, experiment_path: &str, benchmark_path: &str, dry_run: &bool) {
+    pub fn submit_job(&self, experiment_path: &str, benchmark_path: &str, dry_run: &bool) -> Result<(), std::io::Error> {
         //Get experiments parameters
         let experiment_path = Path::new(experiment_path);
         let benchmark_path = Path::new(benchmark_path);
@@ -113,17 +115,19 @@ impl JobHandler{
 
         if ! dry_run {
             //Obtain a unique hash from the server
-            let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len()).into_iter();
+            let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len())?.into_iter();
 
             for job_argument in &mut repl_maps.job_arguments {
-                self.submit_one_job(job_argument, &hashes.next().unwrap());
+                let _ = self.submit_one_job(job_argument, &hashes.next().unwrap())?;
             }
         }
 
         let _ = experiment.create_submit_job_map(&repl_maps);
+
+        Ok(())
     }
 
-    fn submit_one_job(&self, job_argument: &mut JobArgument, hash: &str) {
+    fn submit_one_job(&self, job_argument: &mut JobArgument, hash: &str)  -> Result<(), std::io::Error> {
         let titan_path = Path::new(TITAN_SUBMIT_DIR);
         let _ = job_argument.prepare_host_directories();
 
@@ -145,11 +149,11 @@ impl JobHandler{
         let dst_job_path = self.temp_path.join(&job_file_path);
         fill_template(JOB_TEMPLATE.to_owned(), &dst_job_path , &job_argument.meta_arguments);
         let titan_job_path = titan_path.join(&job_file_path);
-        let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap());
+        let _ = ssh::send_files(&dst_job_path.to_str().unwrap(), &titan_job_path.to_str().unwrap())?;
 
-        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()));
+        let (stdout, stderr) = ssh::send_command(&format!("sbatch {}", titan_job_path.to_str().unwrap()))?;
         //Sbatch is send, the job-file is not needed anymore
-        let _ = ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()));
+        let _ = ssh::send_command(&format!("rm {}", titan_job_path.to_str().unwrap()))?;
         
         let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
 
@@ -160,6 +164,7 @@ impl JobHandler{
         } else {
             eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
         }
+        Ok(())
     }
 
     /*
@@ -185,12 +190,12 @@ impl JobHandler{
         let _ = ssh::send_files(&temp_exp_path.join(Path::new("*")).to_str().unwrap(), &titan_path.to_str().unwrap());
     }
 
-    pub fn collect_jobs(&mut self, experiment_map_file: &Path) {
+    pub fn collect_jobs(&mut self, experiment_map_file: &Path) -> Result<(), std::io::Error> {
         let mut jobs = get_job_map(&experiment_map_file).unwrap();
 
         self.all = false;
         self.completed = None;
-        let titan_job_stats = self.get_jobs();
+        let titan_job_stats = self.get_jobs()?;
         let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.job_id.clone()).collect();
 
         for job_argument in &mut jobs.job_arguments {
@@ -202,7 +207,7 @@ impl JobHandler{
                             let bench_job_id = format!("{}_{}", job_nr, task_idx);
                             if ! titan_job_ids.contains(&bench_job_id) {
                                 let dst_path = job_argument.host_dst_path.join(&experiment_argument.sniper_dir_name);
-                                self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path);
+                                self.retrieve_result(benchmark_argument, &bench_job_id, &dst_path)?;
                             }
                         }
                         _ => {
@@ -218,23 +223,24 @@ impl JobHandler{
         failed_jobs.keep_failed_task();
 
         if failed_jobs.job_arguments.len() > 0 {
-            self.retry_jobs(&mut failed_jobs);
+            self.retry_jobs(&mut failed_jobs)?;
             failed_jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::SUBMITTED);
 
             jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::RETRIED);
             jobs.job_arguments.append(&mut failed_jobs.job_arguments);
         }
         let _ = write_submit_job_map(&jobs, &experiment_map_file);
+        Ok(())
     }
 
-    fn retrieve_result(&self, benchmark_argument: &mut BenchmarkArgument, bench_job_id: &str, host_dst_path: &Path) {
+    fn retrieve_result(&self, benchmark_argument: &mut BenchmarkArgument, bench_job_id: &str, host_dst_path: &Path) -> Result<(), std::io::Error> {
         let result_file = format!("results_{bench_job_id}.tar.gz");
         let src_path = format!("/home/slurmslave/results/{result_file}");
         let tar_file_path = self.temp_path.join(&result_file);
         let dst_path = host_dst_path.join(&benchmark_argument.benchmark_name).join(&benchmark_argument.run_idx.to_string());
         
-        let _ = ssh::get_files(&src_path, self.temp_path.to_str().unwrap());
-        let _ = ssh::untar(&tar_file_path, &dst_path, true);
+        let _ = ssh::get_files(&src_path, self.temp_path.to_str().unwrap())?;
+        let _ = ssh::untar(&tar_file_path, &dst_path, true)?;
         
         benchmark_argument.status = 
             if test_job::job_succeed(&dst_path) {
@@ -244,15 +250,17 @@ impl JobHandler{
                 println!("Experiment {bench_job_id} did not pass the tests");
                 let _ = ssh::clean_dir(&dst_path);
                 JobStatus::FAILED
-            }
+            };
+        Ok(())
     }
 
-    fn retry_jobs(&self, jobs: &mut Arguments) {
-        let mut hashes = ssh::get_hash_titan(jobs.job_arguments.len()).into_iter();
+    fn retry_jobs(&self, jobs: &mut Arguments) -> Result<(), std::io::Error> {
+        let mut hashes = ssh::get_hash_titan(jobs.job_arguments.len())?.into_iter();
         println!("Failed jobs detected... retyring them.");
 
         for job_argument in &mut jobs.job_arguments {
-            self.submit_one_job(job_argument, &hashes.next().unwrap());
+            self.submit_one_job(job_argument, &hashes.next().unwrap())?;
         }
+        Ok(())
     }
 }
