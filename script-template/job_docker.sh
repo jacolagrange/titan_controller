@@ -43,32 +43,49 @@ wrap_up() {
 		tar czf results_${job_suffix}.tar.gz ~/stdout_${job_suffix}.txt ~/stderr_${job_suffix}.txt
 	fi
 
-	scp results_${job_suffix}.tar.gz slurmslave@bacchus:results/.
-	scp_output=$?
+	copy_with_retry_bacchus to results_${job_suffix}.tar.gz results/.
 
-	if [ $scp_output -eq 0 ]; then
+	if [ $? -eq 0 ]; then
 		if [ $results_dir_exists -eq 1 ]; then
 	  		rm -r ${working_dir}
 		else
 			rm ~/results_${job_suffix}.tar.gz ~/stdout_${job_suffix}.txt ~/stderr_${job_suffix}.txt
 		fi
-	else
-	  	echo "scp to control host failed!" 1>&2
 	fi
 
 	exit
 }
 
-copy_with_retry_from_bacchus() {
-	submitted_file=$1
-	rename_to=$2
+copy_with_retry_bacchus() {
+	direction=$1 #"to" or "from"
+	source_file=$2
+	target_file=$3
+	max_retries=10
+	attempt=0
+
 	while true; do
-		scp bacchus:$submitted_file $rename_to > /dev/null 2>&1
+		if [ "$direction" = "from" ]; then
+			scp bacchus:"$source_file" "$target_file" > /dev/null 2>&1
+		elif [ "$direction" = "to" ]; then
+			scp "$source_file" bacchus:"$target_file" > /dev/null 2>&1
+		else
+			echo "Invalid direction: must be 'to' or 'from'" >&2
+			return 2
+		fi
+
 		if [ $? -eq 0 ]; then
-			ssh bacchus "rm $submitted_file"
+			if [ "$direction" = "from" ]; then
+				ssh bacchus "rm '$source_file'" > /dev/null 2>&1
+			fi
 			break
 		else
-			sleep 1
+			attempt=$((attempt + 1))
+			if [ $attempt -ge $max_retries ]; then
+				echo "Failed to copy file $direction bacchus after $max_retries attempts." >&2
+				return 1
+			fi
+			sleep_time=$((2 ** (attempt -1)))
+			sleep $sleep_time
 		fi
 	done
 }
@@ -141,7 +158,11 @@ working_dir=`pwd`
 # copy the job and execute script from the command node, implement while sleep to make sure they are already copied
 echo "Copying execution files."
 cp $0 job.sh
-copy_with_retry_from_bacchus ~/jobs/submitted/execute_${job_suffix}.sh execute.sh
+copy_with_retry_bacchus from ~/jobs/submitted/execute_${job_suffix}.sh execute.sh
+if [ $? -ne 0 ]; then
+	echo "Could not copy execute script from bacchus" >&2
+	wrap_up 1
+fi
 chmod +x execute.sh
 
 container_name="${original_image}_${job_suffix}"
