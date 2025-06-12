@@ -28,8 +28,8 @@
 		"parameters": [{
 			"mix": "product",
 			"description_mix":"product will generate all possible combinations of parameters below.",
-			"include_base": "true",
-			"description_include_base":"Wether the first value of all the paremeters should be included or not",
+			"include_first": "true",
+			"description_include_first":"Wether the first value of all the paremeters should be included or not",
 			"values": {
 				"in_order":["true"],
 				"timer":["piggy-bagging"],
@@ -39,8 +39,8 @@
 		},{
 			"mix": "single",
 			"description_mix":"single will vary only one parameter at the time and will use the first parameter as the default.",
-			"include_base": "true",
-			"description_include_base":"Wether the first value of all the paremeters should be included or not",
+			"include_first": "true",
+			"description_include_first":"Wether the first value of all the paremeters should be included or not",
 			"values": {
 				"in_order":["true"],
 				"timer":["piggy-bagging"],

@@ -305,7 +305,7 @@ impl ParseExperiment{
                 _ => Vec::<Vec<String>>::new(),
             };
 
-            if param_value["include_base"] == "true" && param_combinations.len() > 0{
+            if param_value["include_first"] == "false" && param_combinations.len() > 0{
                 param_combinations.remove(0);
             }
 
