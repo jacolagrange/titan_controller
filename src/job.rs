@@ -40,7 +40,7 @@ impl JobHandler{
         JobHandler{creds, all, completed, temp_path}
     }
 
-    fn get_jobs(&self) -> Result<Vec<TitanJobStat>, std::io::Error> {
+    fn get_jobs(&self) -> Result<Option<Vec<TitanJobStat>>, std::io::Error> {
         let (stdout, skip_nr) = 
         if let Some(days) = self.completed {
             lazy_static! {
@@ -65,6 +65,12 @@ impl JobHandler{
             let (stdout, _stderr) = ssh::send_command(&command)?;
             (stdout, 1)
         };
+
+        if ! stdout.to_lowercase().contains("jobid") {
+            //Something went wrong at the SSH
+            println!("Could not find any Jobid in the output. This is the return output:\n stdout: {}", stdout);
+            return Ok(None)
+        }
     
         let output = stdout.split("\n").skip(skip_nr);
     
@@ -82,15 +88,32 @@ impl JobHandler{
             };
             jobs.push(t);
         }
-        Ok(jobs)
+        Ok(Some(jobs))
+    }
+
+    fn get_jobs_retry(&self) -> Result<Vec<TitanJobStat>, std::io::Error> {
+        let max_tries = 5;
+        let mut res;
+
+        for _ in 0..max_tries {
+            res = self.get_jobs()?;
+            if let Some(jobs) = res {
+                return Ok(jobs);
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Could get the jobs after multiple tries, something is wrong with job connection. Aborting here"))
     }
 
     pub fn print_jobs(&self) -> Result<(), std::io::Error> {
-        let jobs = self.get_jobs()?;
-        println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", "JOBID", "NAME", "ACCOUNT", "CORES", "TIME", "STATE");
-        println!("{:-<10} {:-<100} {:-<15} {:-<5} {:-<20} {:-<15}", "", "", "", "", "", "");
-        for job in jobs{
-            println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", job.job_id, job.name, job.account, job.cores, job.time, job.state);
+        if let Some(jobs) = self.get_jobs()? {
+            println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", "JOBID", "NAME", "ACCOUNT", "CORES", "TIME", "STATE");
+            println!("{:-<10} {:-<100} {:-<15} {:-<5} {:-<20} {:-<15}", "", "", "", "", "", "");
+            for job in jobs{
+                println!("{:<10} {:<100} {:<15} {:<5} {:<20} {:<15}", job.job_id, job.name, job.account, job.cores, job.time, job.state);
+            }
+        }
+        else {
+            println!("Something went wrong when retreiving the jobs. Please fix or try again later.");
         }
         Ok(())
     }
@@ -118,7 +141,11 @@ impl JobHandler{
             let mut hashes = ssh::get_hash_titan(repl_maps.job_arguments.len())?.into_iter();
 
             for job_argument in &mut repl_maps.job_arguments {
-                let _ = self.submit_one_job(job_argument, &hashes.next().unwrap())?;
+                let success = self.submit_one_job(job_argument, &hashes.next().unwrap())?;
+                if ! success {
+                    println!("Not all the jobs could be subitted to titan. Run collect, to retry those jobs later");
+                    break;
+                }
             }
         }
 
@@ -127,7 +154,8 @@ impl JobHandler{
         Ok(())
     }
 
-    fn submit_one_job(&self, job_argument: &mut JobArgument, hash: &str)  -> Result<(), std::io::Error> {
+    fn submit_one_job(&self, job_argument: &mut JobArgument, hash: &str) -> Result<bool, std::io::Error> {
+        //TODO Check if those benchmarks are submitted already
         let titan_path = Path::new(TITAN_SUBMIT_DIR);
         let _ = job_argument.prepare_host_directories();
 
@@ -157,14 +185,21 @@ impl JobHandler{
         
         let job_nr = stdout.split("\n").next().unwrap().split(" ").last().unwrap();
 
-        if stdout.contains("Submitted batch job") {
-            self.submit_experiment(job_argument, job_nr);
-            job_argument.job_nr = Some(job_nr.to_owned());
-            println!("Submitted job {} (jobid {})", &job_argument.meta_arguments["<JOB>"], job_nr);
-        } else {
-            eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
-        }
-        Ok(())
+        let success = 
+            if stdout.contains("Submitted batch job") {
+                self.submit_experiment(job_argument, job_nr);
+                job_argument.job_nr = Some(job_nr.to_owned());
+                job_argument.change_state_benchmarks(&None, &JobStatus::SUBMITTED);
+                println!("Submitted job {} (jobid {})", &job_argument.meta_arguments["<JOB>"], job_nr);
+                true
+            //} else if stdout.contains("Batch job submission failed: Resource temporarily unavailable") {
+            //    eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
+            //    false
+            } else {
+                eprintln!("Job submission did not produce a job-nr \nOutput:\n{stdout}\n\nErr:\n{stderr}");
+                false
+            };
+        Ok(success)
     }
 
     /*
@@ -195,7 +230,8 @@ impl JobHandler{
 
         self.all = false;
         self.completed = None;
-        let titan_job_stats = self.get_jobs()?;
+
+        let titan_job_stats = self.get_jobs_retry()?;
         let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.job_id.clone()).collect();
 
         for job_argument in &mut jobs.job_arguments {
@@ -227,13 +263,14 @@ impl JobHandler{
         }
 
         let mut failed_jobs = jobs.clone();
-        failed_jobs.keep_failed_task();
+        failed_jobs.keep_tasks(&[JobStatus::FAILED, JobStatus::TOSUBMIT]);
 
         if failed_jobs.job_arguments.len() > 0 {
+            failed_jobs.change_state_benchmarks(&Some(JobStatus::FAILED), &JobStatus::TOSUBMIT);
             self.retry_jobs(&mut failed_jobs)?;
-            failed_jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::SUBMITTED);
 
-            jobs.change_state_benchmarks(&JobStatus::FAILED, &JobStatus::RETRIED);
+            jobs.change_state_benchmarks(&Some(JobStatus::FAILED), &JobStatus::RETRIED);
+            jobs.change_state_benchmarks(&Some(JobStatus::TOSUBMIT), &JobStatus::RETRIED);
             jobs.job_arguments.append(&mut failed_jobs.job_arguments);
         }
         let _ = write_submit_job_map(&jobs, &experiment_map_file);
@@ -263,7 +300,7 @@ impl JobHandler{
 
     fn retry_jobs(&self, jobs: &mut Arguments) -> Result<(), std::io::Error> {
         let mut hashes = ssh::get_hash_titan(jobs.job_arguments.len())?.into_iter();
-        println!("Failed jobs detected... retyring them.");
+        println!("Failed or not yet submitted jobs detected... retyring/sending them.");
 
         for job_argument in &mut jobs.job_arguments {
             self.submit_one_job(job_argument, &hashes.next().unwrap())?;

@@ -275,7 +275,7 @@ impl ParseExperiment{
                         benchmark_name: benchmark_name.clone(),
                         run_idx,
                         task_idx: None,
-                        status: JobStatus::SUBMITTED
+                        status: JobStatus::TOSUBMIT
                     });
             }
         }

@@ -12,14 +12,14 @@ pub struct Arguments {
 }
 
 impl Arguments {
-    pub fn keep_failed_task(&mut self){
+    pub fn keep_tasks(&mut self, statuses: &[JobStatus]) {
         for job_argument in &mut self.job_arguments{
-            job_argument.keep_failed_task();
+            job_argument.keep_tasks(statuses);
         }
         self.job_arguments.retain(|job_argument| job_argument.experiment_arguments.len() > 0);
     }
 
-    pub fn change_state_benchmarks(&mut self, old_state: &JobStatus, new_state: &JobStatus){
+    pub fn change_state_benchmarks(&mut self, old_state: &Option<JobStatus>, new_state: &JobStatus){
         for job_argument in &mut self.job_arguments{
             job_argument.change_state_benchmarks(old_state, new_state);
         }
@@ -55,14 +55,14 @@ impl JobArgument {
         tasks
     }
 
-    pub fn keep_failed_task(&mut self){
+    pub fn keep_tasks(&mut self, statuses: &[JobStatus]){
         for experiment_argument in &mut self.experiment_arguments{
-            experiment_argument.keep_failed_task();
+            experiment_argument.keep_task(statuses);
         }
         self.experiment_arguments.retain(|experiment_argument| experiment_argument.benchmarks.len() > 0);
     }
 
-    pub fn change_state_benchmarks(&mut self, old_state: &JobStatus, new_state: &JobStatus){
+    pub fn change_state_benchmarks(&mut self, old_state: &Option<JobStatus>, new_state: &JobStatus){
         for experiment_argument in &mut self.experiment_arguments{
             experiment_argument.change_state_benchmarks(old_state, new_state);
         }
@@ -105,13 +105,13 @@ impl ExperimentArgument {
         self.benchmarks.len()
     }
 
-    pub fn keep_failed_task(&mut self){
-        self.benchmarks.retain(|benchmark| benchmark.status == JobStatus::FAILED);
+    pub fn keep_task(&mut self, statuses: &[JobStatus]){
+        self.benchmarks.retain(|benchmark| statuses.contains(&benchmark.status));
     }
 
-    pub fn change_state_benchmarks(&mut self, old_state: &JobStatus, new_state: &JobStatus){
+    pub fn change_state_benchmarks(&mut self, old_state: &Option<JobStatus>, new_state: &JobStatus){
         for benchmark in &mut self.benchmarks{
-            if benchmark.status == *old_state {
+            if old_state.is_none() || Some(&benchmark.status) == old_state.as_ref() {
                 benchmark.status = new_state.clone();
             }
         }
@@ -121,6 +121,7 @@ impl ExperimentArgument {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum JobStatus {
+    TOSUBMIT,
     SUBMITTED,
     DONE,
     FAILED,
