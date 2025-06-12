@@ -80,6 +80,7 @@ cd ${RUN_DIR}
 # MODIFY SNIPER COMMAND LINE HERE
 <SETUP_CMD>
 ${SNIPER_DIR}/run-sniper -d ${RUN_DIR} <ARGUMENTS>
+${SNIPER_DIR}/tools/mcpat.py -d ${RUN_DIR}
 
 chown -R slurmslave:slurmslave .
 
