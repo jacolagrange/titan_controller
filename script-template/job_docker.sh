@@ -96,10 +96,11 @@ checkout_git_repo() {
 	lockdir="gitlock"
 	trap 'rm -rf "$lockdir"' SIGTERM #if job happens to be terminated by slurm
 	while ! mkdir $lockdir 2>/dev/null; do
-		echo "Cannot enter critical section now, waiting..."
+		echo "Cannot enter critical section now in ~/$i/master, waiting..."
 		sleep 1m
 	done
 	while [ -f .git/index.lock ]; do #Should not be able to wait here...
+		echo "Stuck behind .git/index.lock in ~/$i/master, waiting..."
 		sleep 1m
 	done
 
