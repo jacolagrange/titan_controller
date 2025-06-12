@@ -299,11 +299,15 @@ impl ParseExperiment{
         let mut seen = HashSet::new();
 
         for param_value in self.exp["sniper_parameters"]["parameters"].members() {
-            let param_combinations = match json_value_to_string(&param_value["mix"], "").to_lowercase().as_str() {
+            let mut param_combinations = match json_value_to_string(&param_value["mix"], "").to_lowercase().as_str() {
                 "product" => create_parameter_product_mix(sniper_arg_keys, &param_value["values"]),
                 "single" => create_parameter_single_mix(sniper_arg_keys, &param_value["values"]),
                 _ => Vec::<Vec<String>>::new(),
             };
+
+            if param_value["include_base"] == "true" && param_combinations.len() > 0{
+                param_combinations.remove(0);
+            }
 
             for combination in param_combinations {
                 if seen.insert(combination.clone()) {
@@ -350,6 +354,9 @@ pub fn write_submit_job_map(job_arguments: &Arguments, host_dst_path: &Path) -> 
 
 /* Function that creates all the possible combinations of values
  * Output is a vector of each combination, and a combination is a vector of the string combinations
+ * Creates a list of the last key, then passes the array back. The previous key (one before last),
+ * will append the last key values to its own values. Rince and repeat, until the first key is met.
+ * The first element of the VEC is the base configuration
  */
 fn create_parameter_product_mix(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
     if keys.is_empty() {return Vec::new();}
