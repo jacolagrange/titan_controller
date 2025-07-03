@@ -10,6 +10,9 @@ mod experiments;
 mod job_data;
 mod test_job;
 mod constants;
+mod config_parse;
+mod caching;
+mod sniper_config;
 
 use clap::{Parser, ArgGroup};
 use std::str::FromStr;

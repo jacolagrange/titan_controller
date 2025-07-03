@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use crate::constants::EXPERIMENT_DB_NAME;
 use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
 use std::str::FromStr;
+use crate::caching::get_hash_sniper_config;
 
 enum ExperimentType{
     BINARY,
@@ -188,6 +189,7 @@ impl ParseExperiment{
             }
 
             let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
+            let _ = get_hash_sniper_config(benchmarks[0].arguments.get("<ARGUMENTS>").unwrap());
             
             exp_arguments.push(
                 ExperimentArgument{

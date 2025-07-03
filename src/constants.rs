@@ -9,3 +9,5 @@ pub static SNIPER_ARGUMENT_FILE_NAME: &str = "args.json";
 pub static TEMP_FOLDER_NAME: &str = "/tmp/titan_controller";
 
 pub static TITAN_SUBMIT_DIR: &str = "/home/slurmslave/jobs/submitted/.";
+
+pub static LOCAL_SNIPER_DIR: &str = "/home/jaime/Documents/sniperAFS/sniper";
