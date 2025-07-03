@@ -8,8 +8,9 @@ use std::collections::{HashMap, HashSet};
 use crate::constants::EXPERIMENT_DB_NAME;
 use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
 use std::str::FromStr;
-use crate::caching::get_hash_sniper_config;
+use crate::caching;
 
+#[derive(PartialEq)]
 enum ExperimentType{
     BINARY,
     TRACE,
@@ -58,13 +59,14 @@ impl ParseExperiment{
 
     pub fn get_arguments(&self) -> Arguments {
         let mut job_args = Vec::new();
-        let job_git_repos: String = self.get_git_repos(&self.exp);
+        let job_git_repos = self.get_git_repos(&self.exp);
         let job_mounts_vbox: String = self.get_vm_mounts(&self.exp, VmType::VBOX);
         let job_mounts_docker: String = self.get_vm_mounts(&self.exp, VmType::DOCKER);
 
         for suite in self.bench["suites"].members() {
-            let mut git_repos: String = self.get_git_repos(&suite);
-            git_repos.push_str(&job_git_repos);
+            let mut git_repos = self.get_git_repos(&suite);
+            git_repos.extend(job_git_repos.clone());
+            let git_repos_script = self.make_git_checkout_script(&git_repos);
 
             let mut mounts_vbox: String = self.get_vm_mounts(&suite, VmType::VBOX);
             mounts_vbox.push_str(&job_mounts_vbox);
@@ -85,22 +87,25 @@ impl ParseExperiment{
                 (String::from("<MEMORY>"),    self.get_tot_memory().to_string()),
                 //(String::from("<TASKS>"),     total_jobs.to_string()),
                 (String::from("<VM_NAME>"),   json_value_to_string(&job_vals["vm_name"],"")),
-                (String::from("<GIT-REPOSITORIES>"), git_repos),
+                (String::from("<GIT-REPOSITORIES>"), git_repos_script),
                 (String::from("<Virtualbox_MOUNTS>"),    mounts_vbox),
                 (String::from("<DOCKER_MOUNTS>"),    mounts_docker),
             ]);
 
             let experiment_arguments = self.get_exp_arguments(&suite, nr_runs);
 
-            let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
-            let host_dst_path = Path::new(&host_dst_path_str);
+            //let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+            //let host_dst_path = Path::new(&host_dst_path_str);
+
+            let traces = self.get_traces_map(&suite);
+            let cache_path = caching::get_tools_hash_path(&git_repos, &traces);
 
             job_args.push(
                 JobArgument{
                     suite: json_value_to_string(&suite["suite"],""),
                     meta_arguments, 
                     experiment_arguments,
-                    host_dst_path: host_dst_path.to_path_buf(),
+                    host_dst_path: cache_path.to_path_buf(),
                     job_nr: None
                 });
         }
@@ -122,16 +127,34 @@ impl ParseExperiment{
         core_nr * mem_per_core
     }
 
-    fn get_git_repos(&self, args_obj: &json::JsonValue) -> String {
-        let mut git_repos = String::new();
+    fn get_git_repos(&self, args_obj: &json::JsonValue) -> HashMap<String, String> {
+        let mut git_repos = HashMap::new();
         if args_obj.has_key("git") {
             for (repo, branch) in args_obj["git"].entries() {
                 let repo_name = repo.strip_suffix("_branch").unwrap();
                 let branch_str = branch.as_str().unwrap();
-                let _ = write!(git_repos, "checkout_git_repo {repo_name} {branch_str}\n");
+                git_repos.insert(repo_name.to_string(), branch_str.to_string());
             }
         }
         return git_repos;
+    }
+
+    fn make_git_checkout_script(&self, git_repos: &HashMap<String, String>) -> String {
+        git_repos
+            .iter()
+            .map(|(repo, branch)| format!("checkout_git_repo {repo} {branch}\n"))
+            .collect()
+    }
+
+    fn get_traces_map(&self, benchmark_suite: &json::JsonValue) -> Option<HashMap<String, String>> {
+        let experiment_type = ExperimentType::from_str(&json_value_to_string(&benchmark_suite["type"],"")).unwrap();
+        if experiment_type == ExperimentType::TRACE {
+            let mut trace_map = HashMap::new();
+            trace_map.insert(json_value_to_string(&benchmark_suite["suite"], ""), json_value_to_string(&benchmark_suite["version"], ""));
+            Some(trace_map)
+        } else {
+            None
+        }
     }
 
     fn get_vm_mounts(&self, args_obj: &json::JsonValue, vm_type: VmType) -> String {
@@ -188,8 +211,8 @@ impl ParseExperiment{
                 benchmark.arguments.get_mut("<ARGUMENTS>").unwrap().insert_str(0, &sniper_str_arg);
             }
 
-            let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
-            let _ = get_hash_sniper_config(benchmarks[0].arguments.get("<ARGUMENTS>").unwrap());
+            //let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
+            let sniper_dir_name = caching::get_hash_sniper_config(&sniper_str_arg).to_string();
             
             exp_arguments.push(
                 ExperimentArgument{
@@ -322,6 +345,7 @@ impl ParseExperiment{
         return sniper_args;
     }
 
+    #[allow(dead_code)]
     fn get_sniper_dir_name(&self, sniper_arg_keys: &Vec<String>, sniper_arg_vals: &HashMap<String, String>) -> String {
         let mut sniper_dir_vals: Vec<&str> = Vec::new();
         for key in sniper_arg_keys {
@@ -339,7 +363,15 @@ impl ParseExperiment{
     }
 }
 
+pub fn set_up_host_dir(host_dst_path: &Path) -> std::io::Result<()> {
+        if ! (host_dst_path.exists() && host_dst_path.is_dir()) {
+            std::fs::create_dir_all(&host_dst_path)?;
+        }
+        Ok(())
+}
+
 pub fn write_submit_job_map(job_arguments: &Arguments, host_dst_path: &Path) -> std::io::Result<()> {
+    let _ = set_up_host_dir(host_dst_path);
     let file_path = if host_dst_path.file_name().unwrap().to_str().unwrap() != EXPERIMENT_DB_NAME {
         host_dst_path.join(EXPERIMENT_DB_NAME)
     } else {
