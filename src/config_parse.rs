@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::path::Path;
-use config::{Config, File, ConfigError};
-use std::fs;
 
 use crate::sniper_config::SniperConfig;
 use crate::constants::LOCAL_SNIPER_DIR;
@@ -10,6 +8,7 @@ use crate::constants::LOCAL_SNIPER_DIR;
 pub struct ParsedArgs {
     configs: Vec<String>,
     cmd_settings: HashMap<String, String>,
+    #[allow(dead_code)]
     others: Vec<String>,
 }
 
@@ -37,6 +36,14 @@ impl ParsedArgs{
                         }
                     }
                 }
+                "-s" => {
+                    if let Some(setting) = iter.next() {
+                        // Allow --key=value or key=value
+                        let setting = setting.strip_prefix("--").unwrap_or(setting);
+                        let (key, value) = setting.split_once(":").unwrap_or((setting, ""));
+                        cmd_settings.insert(key.to_string(), value.to_string());
+                    }
+                }
                 other => {
                     others.push(other.to_string());
                 }
@@ -50,27 +57,18 @@ impl ParsedArgs{
         }
     }
 
-    pub fn get_final_config(&self) -> Result<Config, ConfigError> {
-        let mut settings = Config::builder();
+    pub fn get_final_config(&self) -> SniperConfig {
+        let mut settings = SniperConfig::new();
 
         let config_dir = Path::new(LOCAL_SNIPER_DIR).join("config");
         for config in &self.configs {
-            settings = settings.add_source(File::new(config_dir.join(format!("{config}.cfg")).to_str().unwrap(), SniperConfig));
+            let _ = settings.parse_file(&config_dir.join(format!("{config}.cfg")));
         }
 
         for (key, val) in &self.cmd_settings {
-            //settings = settings.set_override(key, val.as_str())?;
-            let parsed_key = key.replace("/", ".");
-            let res = settings.set_override(&parsed_key, val.as_str());
-            settings = 
-            if res.is_err() {
-                println!("ERROR happened {:#?}", &res);
-                res?
-            } else {
-                res?
-            };
+            settings.set_override(&key, val.as_str());
         }
         
-        settings.build()
+        settings
     }
 }
