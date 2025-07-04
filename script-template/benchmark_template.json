@@ -2,6 +2,7 @@
 	{
 		"suite":"gaps_traces",
 		"type":"traces",
+		"version": "1.0",
 		"vm_mount":{
 			"traces_mount":"/home/slurmslave/traces/sift"
 		},

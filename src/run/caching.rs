@@ -5,15 +5,15 @@ use std::process::Command;
 use std::collections::HashMap;
 
 use crate::constants;
-use crate::sniper_config::SniperConfig;
-use crate::config_parse::ParsedArgs;
+use crate::run::sniper_config::SniperConfig;
+use crate::run::config_parse::ParsedArgs;
 
 pub fn get_hash_sniper_config(exp_args: &str) -> u64 {
     let p_args = ParsedArgs::new(exp_args);
     let final_conf = p_args.get_final_config();
     //println!("Final_conf {:#?}", final_conf);
     let hash = hash_config_normalized(&final_conf);
-    //println!("HASH is {hash}");
+    println!("HASH is {hash}");
     hash
 }
 

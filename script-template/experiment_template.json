@@ -3,7 +3,7 @@
 		"name":"test",
 		"core_per_experiment":1,
 		"mem_per_core":2048,
-		"vm_name":"sniper2204",
+		"vm_name":"sniper2404",
 		"runs":1
 	},
 	"git":{

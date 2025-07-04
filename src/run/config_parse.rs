@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::sniper_config::SniperConfig;
+use crate::run::sniper_config::SniperConfig;
 use crate::constants::LOCAL_SNIPER_DIR;
 
 #[derive(Debug)]
