@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use std::path::Path;
 
 use super::benchmark_suite::BenchmarkSuite;
-//use super::status::JobStatus;
+use super::status::JobStatus;
 use super::db::ExperimentsDataBase;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -19,9 +19,9 @@ impl Experiment {
     // }
     
 
-    pub fn is_done(&mut self, db: &ExperimentsDataBase) -> bool {
-        self.benchmark_suites.retain_mut(|bench_suite| !  bench_suite.is_done(&db));
-        self.benchmark_suites.len() == 0
+    pub fn keep_state(&mut self, db: &ExperimentsDataBase, statuses: &[JobStatus], include_none: &bool) -> bool {
+        self.benchmark_suites.retain_mut(|bench_suite| bench_suite.keep_state(&db, &statuses, &include_none));
+        self.benchmark_suites.len() > 0
     }
 
     pub fn for_each_run_path<F>(&self, mut f: F)

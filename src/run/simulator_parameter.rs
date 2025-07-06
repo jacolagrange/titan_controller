@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::constants::SNIPER_ARGUMENT_FILE_NAME;
 use super::benchmark_parameter::BenchmarkParameter;
-//use super::status::JobStatus;
+use super::status::JobStatus;
 use super::db::ExperimentsDataBase;
 
 /*
@@ -59,10 +59,10 @@ impl SimulatorParameter {
     //     self.benchmark_parameters.retain(|benchmark_parameter| statuses.contains(&benchmark_parameter.status));
     // }
 
-    pub fn is_done(&mut self, db: &ExperimentsDataBase, dst_path: &Path) -> bool {
+    pub fn keep_state(&mut self, db: &ExperimentsDataBase, dst_path: &Path, statuses: &[JobStatus], include_none: &bool) -> bool {
         let sim_path = self.get_dir(&dst_path);
-        self.benchmark_parameters.retain_mut(|bench_param| !  bench_param.is_done(&db, &sim_path));
-        self.benchmark_parameters.len() == 0
+        self.benchmark_parameters.retain_mut(|bench_param| bench_param.keep_state(&db, &sim_path, &statuses, &include_none));
+        self.benchmark_parameters.len() > 0
     }
 
 

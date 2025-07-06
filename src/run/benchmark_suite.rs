@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::simulator_parameter::SimulatorParameter;
-//use super::status::JobStatus;
+use super::status::JobStatus;
 use super::db::ExperimentsDataBase;
 
 /*
@@ -41,9 +41,9 @@ impl BenchmarkSuite {
     //     self.simulator_parameters.retain(|simulator_parameter| simulator_parameter.benchmark_parameters.len() > 0);
     // }
 
-    pub fn is_done(&mut self, db: &ExperimentsDataBase) -> bool {
-        self.simulator_parameters.retain_mut(|sim_param| !  sim_param.is_done(&db, &self.host_dst_path));
-        self.simulator_parameters.len() == 0
+    pub fn keep_state(&mut self, db: &ExperimentsDataBase, statuses: &[JobStatus], include_none: &bool) -> bool {
+        self.simulator_parameters.retain_mut(|sim_param| sim_param.keep_state(&db, &self.host_dst_path, &statuses, &include_none));
+        self.simulator_parameters.len() > 0
     }
 
 

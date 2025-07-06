@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 
 use super::status::JobStatus;
-use super::db::TaskData;
 use super::db::ExperimentsDataBase;
 
 /*
@@ -26,11 +25,11 @@ impl BenchmarkRun {
         Ok(())
     }
 
-    pub fn is_done(&self, db: &ExperimentsDataBase, dst_path: &Path) -> bool {
+    pub fn keep_state(&self, db: &ExperimentsDataBase, dst_path: &Path, statuses: &[JobStatus], include_none: &bool) -> bool {
         let benchmark_path = self.get_dir(dst_path); 
         match db.get_task_data(&benchmark_path){
-            Some(TaskData{status: JobStatus::FAILED, ..}) | None => {false}
-            _ => {true}
+            Some(task) => statuses.contains(&task.status),
+            None => *include_none,
         }
     }
 

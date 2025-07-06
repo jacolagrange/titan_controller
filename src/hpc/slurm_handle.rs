@@ -122,23 +122,24 @@ impl SlurmHandler{
     }
 
     // Job-file is dependend on the infrastructure (slurm on titan for example)
-    pub fn create_job_file(&self, job_argument: &mut BenchmarkSuite, job_file_path: &Path) -> Result<(), std::io::Error> {
+    pub fn create_job_file(&self, job_argument: &BenchmarkSuite, job_file_path: &Path) -> Result<(), std::io::Error> {
         let _ = job_argument.prepare_host_directories();
 
         let nr_tasks = job_argument.get_number_task();
-        //let meta_arguments = &mut job_argument.meta_arguments;
-        if ! job_argument.meta_arguments.contains_key("<TASKS>") {
-            job_argument.meta_arguments.insert(String::from("<TASKS>"), nr_tasks.to_string());
+        let mut meta_arguments = job_argument.meta_arguments.clone();
+
+        if ! meta_arguments.contains_key("<TASKS>") {
+            meta_arguments.insert(String::from("<TASKS>"), nr_tasks.to_string());
         } else {
-            *job_argument.meta_arguments.get_mut("<TASKS>").unwrap() = nr_tasks.to_string();
+            *meta_arguments.get_mut("<TASKS>").unwrap() = nr_tasks.to_string();
         }
 
-        if ! job_argument.meta_arguments.contains_key("<ACCOUNT>") {
-            job_argument.meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
+        if ! meta_arguments.contains_key("<ACCOUNT>") {
+            meta_arguments.insert(String::from("<ACCOUNT>"), self.creds.username.clone());
         }
 
         //Create job file
-        fill_template(JOB_TEMPLATE.to_owned(), &job_file_path , &job_argument.meta_arguments);
+        fill_template(JOB_TEMPLATE.to_owned(), &job_file_path , &meta_arguments);
 
         Ok(())
     }

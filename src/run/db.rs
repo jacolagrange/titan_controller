@@ -11,7 +11,7 @@ use crate::constants::{EXPERIMENT_DB_NAME, CACHE_FOLDER_NAME};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TaskData {
-    job_nr: Option<String>,
+    job_id: Option<String>,
     task_idx: Option<usize>,
     pub status: JobStatus,
 }
@@ -30,7 +30,7 @@ impl ExperimentsDataBase {
     // pub fn from_experiment(experiment: &Experiment) -> Self {
     //     let mut tasks = HashMap::new();
     //     for bench_suite in &experiment.benchmark_suites {
-    //         let job_nr = &bench_suite.job_nr;
+    //         let job_id = &bench_suite.job_id;
     //         let suite_location = bench_suite.host_dst_path.clone();
 
     //         for sim_param in &bench_suite.simulator_parameters {
@@ -43,7 +43,7 @@ impl ExperimentsDataBase {
 
     //                 tasks.insert(
     //                     location,
-    //                     TaskData{job_nr: job_nr.clone(), task_idx, status}
+    //                     TaskData{job_id: job_id.clone(), task_idx, status}
     //                     );
     //             }
     //         }
@@ -51,19 +51,22 @@ impl ExperimentsDataBase {
     //     ExperimentsDataBase{tasks}
     // }
 
-    pub fn from_cache() -> Result<Option<Self>, std::io::Error> {
+    pub fn from_cache() -> Result<Self, std::io::Error> {
         let cache_path = Self::get_cache_path(); 
         Self::from_file(&cache_path)
     }
 
-    fn from_file(file_path: &Path) -> Result<Option<Self>, std::io::Error> {
+    fn from_file(file_path: &Path) -> Result<Self, std::io::Error> {
         if file_path.exists() && file_path.is_file() {
             let file = File::open(&file_path)?;
             let mut reader = std::io::BufReader::new(file);
             let db: Self = serde_json::from_reader(&mut reader)?;
-            Ok(Some(db))
+            Ok(db)
         } else {
-            Ok(None)
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("No database found at: {}", file_path.to_str().unwrap()),
+                ))
         }
     }
 
@@ -98,9 +101,9 @@ impl ExperimentsDataBase {
         self.tasks.get(&task_path.to_path_buf()).cloned()
     }
 
-    pub fn insert(&mut self, loc: &Path, job_nr: &str, task_idx: &usize) {
+    pub fn insert(&mut self, loc: &Path, job_id: &str, task_idx: &usize) {
         self.tasks.insert(loc.to_path_buf(), TaskData{
-            job_nr: Some(job_nr.to_string()),
+            job_id: Some(job_id.to_string()),
             task_idx: Some(task_idx.to_owned()),
             status: JobStatus::TOSUBMIT
         });
@@ -117,10 +120,22 @@ impl ExperimentsDataBase {
         }
     }
 
-    fn set_job_id(&mut self, loc: &Path, job_nr: &str) {
+    fn set_job_id(&mut self, loc: &Path, job_id: &str) {
         if let Some(task_data) = self.tasks.get_mut(loc) {
-            task_data.job_nr = Some(job_nr.to_owned());
+            task_data.job_id = Some(job_id.to_owned());
         }
+    }
+
+    pub fn get_job_task_format(&mut self, loc: &Path) -> Option<String>{
+        self.tasks.get(&loc.to_path_buf()).and_then(
+            |task_data| {
+                if let (Some(job_id), Some(task_idx)) = (&task_data.job_id, &task_data.task_idx) {
+                    let bench_job_id = format!("{}_{}", job_id, task_idx);
+                    Some(bench_job_id)
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn set_task_id(&mut self, loc: &Path, task_idx: &usize) {

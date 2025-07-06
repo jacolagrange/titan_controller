@@ -13,7 +13,6 @@ use crate::communication::ssh;
 use crate::run::{
     experiment::Experiment,
     benchmark_suite::BenchmarkSuite,
-    benchmark_parameter::BenchmarkParameter,
     parse_experiment
 };
 use crate::utils::fill_template::fill_template;
@@ -42,12 +41,12 @@ impl JobHandler{
         let mut experiment = parser.get_arguments();
 
         let mut cur_db = match ExperimentsDataBase::from_cache() {
-            Ok(Some(db)) => db,
+            Ok(db) => db,
             _ => ExperimentsDataBase::new(),
         };
 
         //remove existing benchmarks
-        if experiment.is_done(&cur_db) {
+        if ! experiment.keep_state(&cur_db, &[JobStatus::TOSUBMIT, JobStatus::FAILED], &true) {
             println!("Experiment is already fully done, nothing to do... bye");
             return Ok(());
         }
@@ -70,7 +69,7 @@ impl JobHandler{
         Ok(())
     }
 
-    fn submit_one_job(&self, benchmark_suite: &mut BenchmarkSuite, hash: &str, cur_db: &mut ExperimentsDataBase) -> Result<(), std::io::Error> {
+    fn submit_one_job(&self, benchmark_suite: &BenchmarkSuite, hash: &str, cur_db: &mut ExperimentsDataBase) -> Result<(), std::io::Error> {
         //Create the job file first
         let job_file = format!("job_{hash}.sh");
         let job_file_path = self.temp_path.join(Path::new(&job_file));
@@ -90,17 +89,17 @@ impl JobHandler{
     }
 
     //This file runs completely inside the VM, so is independent on the server infrastructure
-    fn create_job_files(&self, job_argument: &mut BenchmarkSuite, job_nr: &str, cur_db: &mut ExperimentsDataBase) -> Result<PathBuf, std::io::Error> {
+    fn create_job_files(&self, job_argument: &BenchmarkSuite, job_nr: &str, cur_db: &mut ExperimentsDataBase) -> Result<PathBuf, std::io::Error> {
         let temp_exp_path = self.temp_path.join(Path::new(&job_nr));
         if ! temp_exp_path.is_dir() { let _ = fs::create_dir(&temp_exp_path); }
 
         let mut task_idx = 1;
         let bench_suite_dir = &job_argument.host_dst_path;
-        for sim_param in &mut job_argument.simulator_parameters{
+        for sim_param in &job_argument.simulator_parameters{
             let sim_dir = sim_param.get_dir(&bench_suite_dir);
-            for bench_param in &mut sim_param.benchmark_parameters {
+            for bench_param in &sim_param.benchmark_parameters {
                 let bench_param_dir = bench_param.get_dir(&sim_dir);
-                for bench_run in &mut bench_param.benchmark_runs {
+                for bench_run in &bench_param.benchmark_runs {
                     let bench_run_dir = bench_run.get_dir(&bench_param_dir);
 
                     let exp_file_path_str = format!("execute_{job_nr}_{task_idx}.sh");
@@ -118,83 +117,66 @@ impl JobHandler{
     }
 
     pub fn collect_jobs(&mut self, experiment_map_file: &Path) -> Result<(), std::io::Error> {
-        //TODO
-        //let mut experiment = parse_experiment::get_exp_map(&experiment_map_file).unwrap();
+        let mut experiment = parse_experiment::get_exp_map(&experiment_map_file).unwrap();
+        let mut cur_db = ExperimentsDataBase::from_cache()?;
 
-        //let titan_job_stats = self.hpc_handler.get_jobs_retry(false, None)?;
-        //let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.get_job_id()).collect();
+        let titan_job_stats = self.hpc_handler.get_jobs_retry(false, None)?;
+        let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.get_job_id()).collect();
 
-        //for benchmark_suite in &mut experiment.benchmark_suites {
-        //    for simulator_parameter in &mut benchmark_suite.simulator_parameters {
-        //        for benchmark_parameter in &mut simulator_parameter.benchmark_parameters {
-        //            if benchmark_parameter.status != JobStatus::SUBMITTED {continue;}
-        //            match(benchmark_suite.job_nr.as_ref(), benchmark_parameter.task_idx){
-        //                (Some(job_nr), Some(task_idx)) => {
-        //                    let bench_job_id = format!("{}_{}", job_nr, task_idx);
-        //                    if ! titan_job_ids.contains(&bench_job_id) {
-        //                        let dst_path = benchmark_suite.host_dst_path.join(&simulator_parameter.simulator_dir_name);
-        //                        let res = self.retrieve_result(benchmark_parameter, &bench_job_id, &dst_path);
-        //                        match res {
-        //                            Ok(_) => {}
-        //                            Err(_) => {
-        //                                println!("Could not retreive job_id {}.", &bench_job_id);
-        //                                benchmark_parameter.status = JobStatus::FAILED;
-        //                            }
-        //                        }
-        //                    }
-        //                }
-        //                _ => {
-        //                    println!("Could not find the information back about job_id or task_id in the json.");
-        //                    benchmark_parameter.status = JobStatus::FAILED;
-        //                }
-        //            }
-        //        }
-        //    }
-        //}
+        experiment.for_each_run_path(|path| {
+            if let Some(bench_job_task_id) = cur_db.get_job_task_format(&path){
+                if !titan_job_ids.contains(&bench_job_task_id) {
 
-        //let mut failed_exp = experiment.clone();
-        //failed_exp.keep_tasks(&[JobStatus::FAILED, JobStatus::TOSUBMIT]);
+                    let res = self.retrieve_result(&bench_job_task_id, &path);
+                    match res {
+                        Ok(true) => {
+                            cur_db.set_status(&path, &JobStatus::DONE);
+                        }
+                        Ok(false) | Err(_) => {
+                            println!("Could not retreive job_id {}.", &bench_job_task_id);
+                            cur_db.set_status(&path, &JobStatus::FAILED);
+                        }
+                    }
+                }
+            }
+        });
 
-        //if failed_exp.benchmark_suites.len() > 0 {
-        //    failed_exp.change_state_benchmarks(&Some(JobStatus::FAILED), &JobStatus::TOSUBMIT);
-        //    self.retry_experiment(&mut failed_exp)?;
+        //remove existing benchmarks
+        if ! experiment.keep_state(&cur_db, &[JobStatus::TOSUBMIT, JobStatus::FAILED], &true) {
+            println!("All experiment downloads succeeded");
+        } else {
+            self.retry_experiment(&experiment, &mut cur_db)?;
+        }
+        if let Err(e) = cur_db.save_to_cache() { eprintln!("An error happened, when writing down the cache {}", e);}
 
-        //    experiment.change_state_benchmarks(&Some(JobStatus::FAILED), &JobStatus::RETRIED);
-        //    experiment.change_state_benchmarks(&Some(JobStatus::TOSUBMIT), &JobStatus::RETRIED);
-        //    experiment.benchmark_suites.append(&mut failed_exp.benchmark_suites);
-        //}
-        //let _ = write_submit_job_map(&experiment, &experiment_map_file);
         Ok(())
     }
 
-    fn retrieve_result(&self, benchmark_parameter: &mut BenchmarkParameter, bench_job_id: &str, host_dst_path: &Path) -> Result<(), std::io::Error> {
-     //   let result_file = format!("results_{bench_job_id}.tar.gz");
-     //   let src_path = format!("/home/slurmslave/results/{result_file}");
-     //   let tar_file_path = self.temp_path.join(&result_file);
-     //   let dst_path = host_dst_path.join(&benchmark_parameter.benchmark_name).join(&benchmark_parameter.run_idx.to_string());
-     //   
-     //   let _ = ssh::get_files(&src_path, self.temp_path.to_str().unwrap())?;
-     //   let _ = ssh::untar(&tar_file_path, &dst_path, true)?;
-     //   
-     //   benchmark_parameter.status = 
-     //       if test_job::job_succeed(&dst_path) {
-     //           println!("Experiment {bench_job_id} was successfully downloaded");
-     //           JobStatus::DONE
-     //       } else {
-     //           println!("Experiment {bench_job_id} did not pass the tests");
-     //           let _ = ssh::clean_dir(&dst_path);
-     //           JobStatus::FAILED
-     //       };
-        Ok(())
+    fn retrieve_result(&self, bench_job_id: &str, dst_path: &Path) -> Result<bool, std::io::Error> {
+        let result_file = format!("results_{bench_job_id}.tar.gz");
+        let src_path = format!("/home/slurmslave/results/{result_file}");
+        let tar_file_path = self.temp_path.join(&result_file);
+        
+        let _ = ssh::get_files(&src_path, self.temp_path.to_str().unwrap())?;
+        let _ = ssh::untar(&tar_file_path, &dst_path, true)?;
+
+        if test_job::job_succeed(&dst_path) {
+            println!("Experiment {bench_job_id} was successfully downloaded");
+            Ok(true)
+        } else {
+            println!("Experiment {bench_job_id} did not pass the tests");
+            let _ = ssh::clean_dir(&dst_path);
+            Ok(false)
+        }
     }
 
-    fn retry_experiment(&self, experiment: &mut Experiment) -> Result<(), std::io::Error> {
-      //  let mut hashes = ssh::get_hash_titan(experiment.benchmark_suites.len())?.into_iter();
-      //  println!("Failed or not yet submitted experiment detected... retyring/sending them.");
+    fn retry_experiment(&self, experiment: &Experiment, cur_db: &mut ExperimentsDataBase) -> Result<(), std::io::Error> {
+        let mut hashes = ssh::get_hash_titan(experiment.benchmark_suites.len())?.into_iter();
+        println!("Failed or not yet submitted experiment detected... retyring/sending them.");
 
-      //  for benchmark_suite in &mut experiment.benchmark_suites {
-      //      self.submit_one_job(benchmark_suite, &hashes.next().unwrap())?;
-      //  }
+        for benchmark_suite in &experiment.benchmark_suites {
+            self.submit_one_job(benchmark_suite, &hashes.next().unwrap(), cur_db)?;
+        }
         Ok(())
     }
 }
