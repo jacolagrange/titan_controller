@@ -5,12 +5,12 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
 use crate::constants::EXPERIMENT_DB_NAME;
-use crate::run::status::JobStatus;
 use crate::run::{
     experiment::Experiment,
     benchmark_suite::BenchmarkSuite,
     simulator_parameter::SimulatorParameter,
-    benchmark_parameter::BenchmarkParameter
+    benchmark_parameter::BenchmarkParameter,
+    benchmark_run::BenchmarkRun
 };
 
 use std::str::FromStr;
@@ -106,8 +106,7 @@ impl ParseExperiment{
                     suite: json_value_to_string(&suite["suite"],""),
                     meta_arguments, 
                     simulator_parameters,
-                    host_dst_path: cache_path.to_path_buf(),
-                    job_nr: None
+                    host_dst_path: cache_path.to_path_buf()
                 });
         }
         return Experiment{benchmark_suites};
@@ -211,11 +210,11 @@ impl ParseExperiment{
             }
 
             //let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
-            let sniper_dir_name = caching::get_hash_sniper_config(&sniper_str_arg).to_string();
+            let simulator_dir_name = caching::get_hash_sniper_config(&sniper_str_arg).to_string();
             
             exp_arguments.push(
                 SimulatorParameter{
-                    sniper_dir_name,
+                    simulator_dir_name,
                     variable_sniper_parameters: sniper_arg.clone(),
                     benchmark_parameters
                 });
@@ -286,22 +285,18 @@ impl ParseExperiment{
 
             let all_arguments = format!("{benchmark_parameters} {benchmark_str}");
 
-            for run_idx in 0..nr_runs {
-                let arguments = HashMap::from([
-                    (String::from("<BENCH_BUILD_DIR>"), benchmark_build_path.clone()),
-                    (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
-                    (String::from("<SETUP_CMD>"), setup_cmd.clone()),
-                    (String::from("<ARGUMENTS>"), all_arguments.clone())
-                ]);
-                benchmark_arguments.push(
-                    BenchmarkParameter{
-                        arguments,
-                        benchmark_name: benchmark_name.clone(),
-                        run_idx,
-                        task_idx: None,
-                        status: JobStatus::TOSUBMIT
-                    });
-            }
+            let arguments = HashMap::from([
+                (String::from("<BENCH_BUILD_DIR>"), benchmark_build_path.clone()),
+                (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
+                (String::from("<SETUP_CMD>"), setup_cmd.clone()),
+                (String::from("<ARGUMENTS>"), all_arguments.clone())
+            ]);
+
+            let benchmark_runs: Vec<BenchmarkRun> = (0..nr_runs)
+                .map(|run_idx| BenchmarkRun { run_idx })
+                .collect();
+
+            benchmark_arguments.push( BenchmarkParameter{ arguments, benchmark_name, benchmark_runs });
         }
         return benchmark_arguments;
     }
@@ -355,6 +350,7 @@ impl ParseExperiment{
     }
 
 
+    #[allow(dead_code)]
     pub fn get_exp_dst(&self) -> PathBuf {
         let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
         Path::new(&host_dst_path_str).to_path_buf()
