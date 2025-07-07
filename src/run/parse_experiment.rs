@@ -42,24 +42,39 @@ enum VmType {
 #[derive(Debug)]
 pub struct ParseExperiment{
     exp: json::JsonValue,
-    bench: json::JsonValue
+    bench_suites: json::JsonValue
 }
 
 impl ParseExperiment{
-    pub fn new(exp_json_path: &Path, bench_json_path: &Path) -> Self{
-        let mut exp_json_file = File::open(exp_json_path).unwrap();
+    pub fn new(exp_json_path: &Path) -> Self{
         let mut exp_json_data = String::new();
-        let _ = exp_json_file.read_to_string(&mut exp_json_data).unwrap();
-        drop(exp_json_file);
+        File::open(exp_json_path).unwrap()
+            .read_to_string(&mut exp_json_data)
+            .unwrap();
         let exp = json::parse(&exp_json_data).unwrap();
 
-        let mut bench_json_file = File::open(bench_json_path).unwrap();
-        let mut bench_json_data = String::new();
-        let _ = bench_json_file.read_to_string(&mut bench_json_data).unwrap();
-        drop(bench_json_file);
-        let bench = json::parse(&bench_json_data).unwrap();
+        let mut combined_suites = json::JsonValue::new_array();
+        for bench_location in exp["benchmarks"].members() {
+            let mut bench_path = PathBuf::from(bench_location.to_string());
+            if ! bench_path.is_absolute() {
+                bench_path = exp_json_path.parent().unwrap().join(bench_path);
+            }
+            println!("Using benchmark json file {:?}", bench_path);
 
-        return Self {exp, bench}
+            let mut bench_json_data = String::new();
+            File::open(bench_path).unwrap()
+                .read_to_string(&mut bench_json_data)
+                .unwrap();
+            let bench = json::parse(&bench_json_data).unwrap();
+            for suite in bench["suites"].members() {
+                combined_suites.push(suite.clone()).unwrap();
+            }
+        }
+        let bench_suites = json::object! {
+            "suites" => combined_suites
+        };
+
+        Self {exp, bench_suites}
     }
 
     pub fn get_arguments(&self) -> Experiment {
@@ -67,7 +82,7 @@ impl ParseExperiment{
         let job_git_repos = self.get_git_repos(&self.exp);
         let job_mounts_docker: String = self.get_vm_mounts(&self.exp, VmType::DOCKER);
 
-        for suite in self.bench["suites"].members() {
+        for suite in self.bench_suites["suites"].members() {
             let mut git_repos = self.get_git_repos(&suite);
             git_repos.extend(job_git_repos.clone());
             let git_repos_script = self.make_git_checkout_script(&git_repos);

@@ -33,12 +33,14 @@ impl JobHandler{
         JobHandler{hpc_handler, temp_path}
     }
 
-    pub fn submit_jobs(&self, experiment_path: &str, benchmark_path: &str, dry_run: &bool) -> Result<(), std::io::Error> {
+    pub fn submit_jobs(&self, experiment_path: &str, dry_run: &bool) -> Result<(), std::io::Error> {
         //Get experiments parameters
         let experiment_path = Path::new(experiment_path);
-        let benchmark_path = Path::new(benchmark_path);
-        let parser = ParseExperiment::new(&experiment_path, &benchmark_path);
+        let parser = ParseExperiment::new(&experiment_path);
         let mut experiment = parser.get_arguments();
+
+        let dst = parser.get_exp_dst();
+        let _ = write_submit_job_map(&experiment, &dst);
 
         let mut cur_db = match ExperimentsDataBase::from_cache() {
             Ok(db) => db,
@@ -50,6 +52,7 @@ impl JobHandler{
             println!("Experiment is already fully done, nothing to do... bye");
             return Ok(());
         }
+        cur_db.add_new_experiment(&experiment);
 
         if ! dry_run {
             //Obtain a unique hash from the server
@@ -62,9 +65,6 @@ impl JobHandler{
         }
 
         if let Err(e) = cur_db.save_to_cache() { eprintln!("An error happened, when writing down the cache {}", e);}
-
-        let dst = parser.get_exp_dst();
-        let _ = write_submit_job_map(&experiment, &dst);
 
         Ok(())
     }

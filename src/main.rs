@@ -185,10 +185,9 @@ pub fn main() {
                 let hpc_handler = SlurmHandler::new(creds);
                 let job_handler = JobHandler::new(hpc_handler);
                 let paths = args.path.unwrap();
-                if paths.len() >= 2 {
+                if paths.len() >= 1 {
                     let experiment_path = &paths[0];
-                    let benchmarks_path = &paths[1];
-                    let res = job_handler.submit_jobs(experiment_path, benchmarks_path, &args.dry);
+                    let res = job_handler.submit_jobs(experiment_path, &args.dry);
                     match res {
                         Ok(_) => {}
                         Err(e) => {
@@ -197,7 +196,7 @@ pub fn main() {
                         }
                     }
                 } else {
-                    eprintln!("You need to provide an experiment and an benchmarks path to submit a Job");
+                    eprintln!("You need to provide an experiment json file to run an experiment");
                 }
             }
         }

@@ -27,8 +27,8 @@ impl BenchmarkRun {
 
     pub fn keep_state(&self, db: &ExperimentsDataBase, dst_path: &Path, statuses: &[JobStatus], include_none: &bool) -> bool {
         let benchmark_path = self.get_dir(dst_path); 
-        match db.get_task_data(&benchmark_path){
-            Some(task) => statuses.contains(&task.status),
+        match db.get_status(&benchmark_path){
+            Some(status) => statuses.contains(&status),
             None => *include_none,
         }
     }

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use serde::{Serialize, Deserialize};
@@ -10,7 +10,7 @@ use super::status::JobStatus;
 use crate::constants::{EXPERIMENT_DB_NAME, CACHE_FOLDER_NAME};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TaskData {
+struct TaskData {
     job_id: Option<String>,
     task_idx: Option<usize>,
     pub status: JobStatus,
@@ -97,16 +97,20 @@ impl ExperimentsDataBase {
         Ok(())
     }
 
-    pub fn get_task_data(&self, task_path: &Path) -> Option<TaskData> {
-        self.tasks.get(&task_path.to_path_buf()).cloned()
-    }
-
-    pub fn insert(&mut self, loc: &Path, job_id: &str, task_idx: &usize) {
+    pub fn insert(&mut self, loc: &Path) {
         self.tasks.insert(loc.to_path_buf(), TaskData{
-            job_id: Some(job_id.to_string()),
-            task_idx: Some(task_idx.to_owned()),
+            job_id: None,
+            task_idx: None,
             status: JobStatus::TOSUBMIT
         });
+    }
+
+    pub fn add_new_experiment(&mut self, exp: &Experiment) {
+            exp.for_each_run_path(|path| {
+                if !self.tasks.contains_key(path) {
+                    self.insert(&path);
+                }
+            });
     }
 
     pub fn get_status(&self, loc: &Path) -> Option<JobStatus> {
@@ -159,10 +163,6 @@ impl ExperimentsDataBase {
 
     fn get_cache_path() -> PathBuf {
         Path::new(CACHE_FOLDER_NAME).join(EXPERIMENT_DB_NAME)
-    }
-
-    pub fn get_paths(&self) -> HashSet<PathBuf> {
-        self.tasks.keys().cloned().collect()
     }
 }
 
