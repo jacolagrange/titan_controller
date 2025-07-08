@@ -13,7 +13,6 @@ from process_scripts.simstat import SimStat
 
 import process_scripts.utils as utils
 
-
 class RunExtractor(SimulatorInformation):
     def __init__(self, dir_path: Path):
         self.dir_path = dir_path
@@ -81,29 +80,3 @@ class SimParamExtractor:
 
             all_exp[exp.stem] = bench_data
         return all_exp
-
-def sim_data_to_df(nested: dict) -> pd.DataFrame:
-    rows = []
-    row_index = []
-    col_keys = set()
-
-    for param_id, benchmarks in nested.items():
-        for benchmark, runs in benchmarks.items():
-            for run_idx, simdata_list in runs.items():
-                row_data = {}
-                row_index.append((param_id, benchmark, run_idx))
-
-                for sim in simdata_list:
-                    col = (sim.source, sim.section, sim.key, sim.core)
-                    row_data[col] = sim.value
-                    col_keys.add(col)
-
-                rows.append(row_data)
-
-    # Build DataFrame
-    all_cols = sorted(col_keys)
-    df = pd.DataFrame(rows, index=pd.MultiIndex.from_tuples(row_index, names=["param_id", "benchmark", "run_idx"]))
-    df = df.reindex(columns=all_cols)  # fill missing columns with NaN
-    df.columns = pd.MultiIndex.from_tuples(df.columns, names=["source", "section", "key", "core"])
-
-    return df

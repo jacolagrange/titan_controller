@@ -3,13 +3,21 @@ from typing import List, Dict, Tuple
 from pathlib import Path
 
 import process_scripts.utils as utils
-from process_scripts.extractor import SimParamExtractor, sim_data_to_df
+from process_scripts.extractor import SimParamExtractor
+from process_scripts.json_extractor import JsonSimParamExtractor
 import process_scripts.compute as compute
 
 def get(dir_path: Path) -> pd.DataFrame:
-    sim_param = SimParamExtractor(dir_path)
+    sim_param = {}
+    if dir_path.is_file() and dir_path.suffix == ".json":
+        sim_param = JsonSimParamExtractor(dir_path)
+    elif dir_path.is_dir():
+        sim_param = SimParamExtractor(dir_path)
+    else:
+        print("Trying to parse unsupported file type?")
+
     nested_data = sim_param.get()
-    df = sim_data_to_df(nested_data)
+    df = utils.sim_data_to_df(nested_data)
 
     #Taking averages accross cores -> runs -> benhcmarks
     df_core_avg = compute.average_across_cores(df)

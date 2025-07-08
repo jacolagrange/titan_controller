@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import re
-import pandas
+import pandas as pd
 from typing import List
 
 def get_experiment_baseline(json_path: str) -> dict:
@@ -30,8 +30,34 @@ def get_all_subdirs(exp_dir_name : str) -> List[Path]:
         if (sub_dir.is_dir()):
             yield sub_dir
 
-def retrieve_dataframe(df_save: Path) -> pandas.DataFrame:
-    df = pandas.DataFrame()
+def retrieve_dataframe(df_save: Path) -> pd.DataFrame:
+    df = pd.DataFrame()
     if df_save.exists():
-        df = pandas.read_pickle(df_save, compression="infer")
+        df = pd.read_pickle(df_save, compression="infer")
+    return df
+
+def sim_data_to_df(nested: dict) -> pd.DataFrame:
+    rows = []
+    row_index = []
+    col_keys = set()
+
+    for param_id, benchmarks in nested.items():
+        for benchmark, runs in benchmarks.items():
+            for run_idx, simdata_list in runs.items():
+                row_data = {}
+                row_index.append((param_id, benchmark, run_idx))
+
+                for sim in simdata_list:
+                    col = (sim.source, sim.section, sim.key, sim.core)
+                    row_data[col] = sim.value
+                    col_keys.add(col)
+
+                rows.append(row_data)
+
+    # Build DataFrame
+    all_cols = sorted(col_keys)
+    df = pd.DataFrame(rows, index=pd.MultiIndex.from_tuples(row_index, names=["param_id", "benchmark", "run_idx"]))
+    df = df.reindex(columns=all_cols)  # fill missing columns with NaN
+    df.columns = pd.MultiIndex.from_tuples(df.columns, names=["source", "section", "key", "core"])
+
     return df
