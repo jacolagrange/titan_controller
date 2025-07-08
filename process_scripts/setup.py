@@ -4,7 +4,7 @@ import setuptools
 
 setuptools.setup(
         name="process_scripts",
-        version="0.0.1",
+        version="1.0.0",
         author="Jaime Roelandts",
         author_email="jaime.roelandts@ugent.be",
         description="Package to process the output of titan",
@@ -19,6 +19,7 @@ setuptools.setup(
             'matplotlib',
             'numpy',
             'pandas',
-            'seaborn'
+            'seaborn',
+            'scipy'
         ],
 )
