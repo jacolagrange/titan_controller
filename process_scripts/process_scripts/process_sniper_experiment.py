@@ -7,12 +7,12 @@ from process_scripts.extractor import SimParamExtractor
 from process_scripts.json_extractor import JsonSimParamExtractor
 import process_scripts.compute as compute
 
-def get(dir_path: Path) -> pd.DataFrame:
+def get(exp_path: Path) -> pd.DataFrame:
     sim_param = {}
-    if dir_path.is_file() and dir_path.suffix == ".json":
-        sim_param = JsonSimParamExtractor(dir_path)
-    elif dir_path.is_dir():
-        sim_param = SimParamExtractor(dir_path)
+    if exp_path.is_file() and exp_path.suffix == ".json":
+        sim_param = JsonSimParamExtractor(exp_path)
+    elif exp_path.is_dir():
+        sim_param = SimParamExtractor(exp_path)
     else:
         print("Trying to parse unsupported file type?")
 
@@ -27,18 +27,19 @@ def get(dir_path: Path) -> pd.DataFrame:
 
     return df
 
-def get_saved(dirpath: str, force_remake: bool = False) -> pd.DataFrame:
+def get_saved(exp_path: str, force_remake: bool = False) -> pd.DataFrame:
     '''
     Parameters
     ----------
-    dirpath: Where are the experiments located in the sturcture: experiments_variation -> 0-15 -> actual experiments files
+    exp_path: Where are the experiments located in the sturcture: experiments_variation -> 0-15 -> actual experiments files
     metrics: Which metrics should be looked at, if empty get all metrics
     '''
-    dirpath = Path(dirpath)
-    df_save = dirpath.joinpath("df_backup_v2.pickle.xz")
+    exp_path = Path(exp_path)
+    dir_path = exp_path if exp_path.is_dir() else exp_path.parent
+    df_save = dir_path / "df_backup_v2.pickle.xz"
     df = utils.retrieve_dataframe(df_save)
     if df.empty or force_remake:
-        df = get(dirpath)
+        df = get(exp_path)
         df.to_pickle(df_save, compression = "infer")
    
     return df
