@@ -5,6 +5,7 @@ import json
 
 from process_scripts.sim_information import SimulatorInformation, SimData
 
+from process_scripts.arguments import SimArgs
 from process_scripts.simstdout import SimStdout
 from process_scripts.simcpi import SimCpi
 from process_scripts.simmcpat import SimMcPat
@@ -55,7 +56,7 @@ class JsonSimParamExtractor:
                 for sim_params in suite["simulator_parameters"]:
                     sim_dir_name = sim_params["simulator_dir_name"]
                     sim_path = suite_path / sim_dir_name
-                    sim_args_data = sim_params["variable_sniper_parameters"]
+                    sim_args_data = SimArgs.from_dict(sim_params["variable_sniper_parameters"])
 
                     benches = JsonBenchExtractor(sim_path, sim_params["benchmark_parameters"])
                     bench_data = benches.get(sim_args_data)

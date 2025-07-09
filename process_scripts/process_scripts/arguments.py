@@ -25,4 +25,8 @@ class SimArgs(SimulatorInformation):
                 exit(1)
             json_file.close()
     
+        return SimArgs.from_dict(dict_args)
+    
+    def from_dict(dict_args: dict) -> List[SimData]:
         return [SimData("args", param, None, None, val) for param, val in dict_args.items()]
+
