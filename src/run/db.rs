@@ -1,174 +1,184 @@
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use serde::{Serialize, Deserialize};
+use std::str::FromStr;
+use rusqlite::{params, Connection, OptionalExtension, Result as SqliteResult};
 
 use super::experiment::Experiment;
 use super::benchmark_suite::BenchmarkSuite;
 use super::status::JobStatus;
-use crate::constants::{EXPERIMENT_DB_NAME, CACHE_FOLDER_NAME};
+use crate::constants::{CACHE_DB_NAME, CACHE_FOLDER_NAME};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct TaskData {
-    job_id: Option<String>,
-    task_idx: Option<usize>,
-    pub status: JobStatus,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExperimentsDataBase {
-    //Location -> TaskData
-    tasks: HashMap<PathBuf, TaskData>
+    conn: Connection,
 }
 
 impl ExperimentsDataBase {
-    pub fn new() -> Self {
-        Self{tasks: HashMap::new()}
-    }
-    
-    // pub fn from_experiment(experiment: &Experiment) -> Self {
-    //     let mut tasks = HashMap::new();
-    //     for bench_suite in &experiment.benchmark_suites {
-    //         let job_id = &bench_suite.job_id;
-    //         let suite_location = bench_suite.host_dst_path.clone();
+    pub fn new() -> SqliteResult<Self> {
+        let host_dst_path = Path::new(CACHE_FOLDER_NAME);
+        let db_path = host_dst_path.join(CACHE_DB_NAME);
 
-    //         for sim_param in &bench_suite.simulator_parameters {
-    //             let sim_location = suite_location.clone().join(sim_param.simulator_dir_name.clone());
-
-    //             for bench_param in &sim_param.benchmark_parameters {
-    //                 let task_idx = bench_param.task_idx;
-    //                 let status = bench_param.status.clone();
-    //                 let location = bench_param.get_dir(&sim_location);
-
-    //                 tasks.insert(
-    //                     location,
-    //                     TaskData{job_id: job_id.clone(), task_idx, status}
-    //                     );
-    //             }
-    //         }
-    //     }
-    //     ExperimentsDataBase{tasks}
-    // }
-
-    pub fn from_cache() -> Result<Self, std::io::Error> {
-        let cache_path = Self::get_cache_path(); 
-        Self::from_file(&cache_path)
-    }
-
-    fn from_file(file_path: &Path) -> Result<Self, std::io::Error> {
-        if file_path.exists() && file_path.is_file() {
-            let file = File::open(&file_path)?;
-            let mut reader = std::io::BufReader::new(file);
-            let db: Self = serde_json::from_reader(&mut reader)?;
-            Ok(db)
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("No database found at: {}", file_path.to_str().unwrap()),
-                ))
+        if !(host_dst_path.exists() && host_dst_path.is_dir()) {
+            std::fs::create_dir_all(&host_dst_path)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to create directory: {}", e))
+                ))?;
         }
+        
+        let conn = Connection::open(&db_path)?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS experiments (
+                path TEXT PRIMARY KEY,
+                job_id TEXT,
+                task_idx INTEGER,
+                status TEXT NOT NULL
+            );",
+        )?;
+        Ok(ExperimentsDataBase { conn })
     }
 
-    // pub fn update(&mut self, new_db: &Self) {
-    //     for (task_path, new_task_data) in &new_db.tasks {
-    //         match self.tasks.get(task_path) {
-    //             Some(TaskData{status: JobStatus::FAILED, ..}) | None => {
-    //                 self.tasks.insert(task_path.clone(), new_task_data.clone());
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-    // }
-
-    //TODO this is not multi-threaded / multi-program safe.
-    pub fn save_to_cache(&self) -> Result<(), std::io::Error> {
-        let cache_path = Self::get_cache_path(); 
-        self.save_experiment(&cache_path)
-    }
-
-    fn save_experiment(&self, file_path: &Path) -> Result<(), std::io::Error> {
-        set_up_host_dir(file_path.parent().unwrap())?;
-
-        let file = File::create(file_path)?;
-        let mut writer = std::io::BufWriter::new(file);
-        let _ = serde_json::to_writer_pretty(&mut writer, &self)?;
-        writer.flush()?;
+    pub fn insert(&self, loc: &Path) -> SqliteResult<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO experiments (path, job_id, task_idx, status)
+             VALUES (?1, NULL, NULL, ?2)",
+            params![loc.to_string_lossy().as_ref(), JobStatus::TOSUBMIT.as_ref()],
+        )?;
         Ok(())
     }
 
-    pub fn insert(&mut self, loc: &Path) {
-        self.tasks.insert(loc.to_path_buf(), TaskData{
-            job_id: None,
-            task_idx: None,
-            status: JobStatus::TOSUBMIT
+    pub fn add_new_experiment(&self, exp: &Experiment) -> SqliteResult<()> {
+        exp.for_each_run_path(|path| {
+            // INSERT OR IGNORE will only insert if the path doesn't already exist
+            let _ = self.insert(path);
         });
+        Ok(())
     }
 
-    pub fn add_new_experiment(&mut self, exp: &Experiment) {
-            exp.for_each_run_path(|path| {
-                if !self.tasks.contains_key(path) {
-                    self.insert(&path);
-                }
-            });
+    pub fn get_status(&self, loc: &Path) -> SqliteResult<Option<JobStatus>> {
+        self.conn
+            .query_row(
+                "SELECT status FROM experiments WHERE path = ?1",
+                params![loc.to_string_lossy().as_ref()],
+                |row| {
+                    let status_str: String = row.get(0)?;
+                    JobStatus::from_str(&status_str)
+                        .or_else(|_| Err(rusqlite::Error::InvalidQuery))
+                },
+            )
+            .optional()
     }
 
-    pub fn get_status(&self, loc: &Path) -> Option<JobStatus> {
-        self.tasks.get(&loc.to_path_buf()).and_then(
-            |task_data| Some(task_data.status.clone()))
+    pub fn set_status(&self, loc: &Path, new_status: &JobStatus) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE experiments SET status = ?1 WHERE path = ?2",
+            params![new_status.as_ref(), loc.to_string_lossy().as_ref()],
+        )?;
+        Ok(())
     }
 
-    pub fn set_status(&mut self, loc: &Path, new_status: &JobStatus) {
-        if let Some(task_data) = self.tasks.get_mut(loc) {
-            task_data.status = new_status.clone();
-        }
+    pub fn set_job_id(&self, loc: &Path, job_id: &str) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE experiments SET job_id = ?1 WHERE path = ?2",
+            params![job_id, loc.to_string_lossy().as_ref()],
+        )?;
+        Ok(())
     }
 
-    fn set_job_id(&mut self, loc: &Path, job_id: &str) {
-        if let Some(task_data) = self.tasks.get_mut(loc) {
-            task_data.job_id = Some(job_id.to_owned());
-        }
+    pub fn set_task_id(&self, loc: &Path, task_idx: &usize) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE experiments SET task_idx = ?1 WHERE path = ?2",
+            params![task_idx, loc.to_string_lossy().as_ref()],
+        )?;
+        Ok(())
     }
 
-    pub fn get_job_task_format(&mut self, loc: &Path) -> Option<String>{
-        self.tasks.get(&loc.to_path_buf()).and_then(
-            |task_data| {
-                if let (Some(job_id), Some(task_idx)) = (&task_data.job_id, &task_data.task_idx) {
-                    let bench_job_id = format!("{}_{}", job_id, task_idx);
-                    Some(bench_job_id)
-                } else {
-                    None
-                }
-            })
+    pub fn set_experiment_status(&self, exp: &Experiment, new_status: &JobStatus) -> SqliteResult<()> {
+        exp.for_each_run_path(|path| {
+            let _ = self.set_status(path, new_status);
+        });
+        Ok(())
     }
 
-    pub fn set_task_id(&mut self, loc: &Path, task_idx: &usize) {
-        if let Some(task_data) = self.tasks.get_mut(loc) {
-            task_data.task_idx = Some(task_idx.to_owned());
-        }
-    }
-
-    pub fn set_experiment_status(&mut self, exp: &Experiment, new_status: &JobStatus) {
-            exp.for_each_run_path(|path| self.set_status(path, new_status));
-    }
-
-    pub fn set_bench_suite_job_id(&mut self, bench_suite: &BenchmarkSuite, job_id: &str, new_status: &Option<JobStatus>) {
-        bench_suite.for_each_run_path(&mut |path: &Path| {
-            self.set_job_id(&path, job_id);
-            if let Some(stat) = new_status {
-                self.set_status(&path, stat);
+    pub fn set_bench_suite_job_id(&self, bench_suite: &BenchmarkSuite, job_id: &str, new_status: &Option<JobStatus>) -> SqliteResult<()> {
+        match new_status {
+            Some(status) => {
+                // Update both job_id and status in one query
+                bench_suite.for_each_run_path(&mut |path: &Path| {
+                    let _ = self.conn.execute(
+                        "UPDATE experiments SET job_id = ?1, status = ?2 WHERE path = ?3",
+                        params![job_id, status.as_ref(), path.to_string_lossy().as_ref()],
+                    );
+                });
             }
-        });
-    }
-
-    fn get_cache_path() -> PathBuf {
-        Path::new(CACHE_FOLDER_NAME).join(EXPERIMENT_DB_NAME)
-    }
-}
-
-pub fn set_up_host_dir(host_dst_path: &Path) -> Result<(), std::io::Error> {
-        if ! (host_dst_path.exists() && host_dst_path.is_dir()) {
-            std::fs::create_dir_all(&host_dst_path)?;
+            None => {
+                // Only update job_id
+                bench_suite.for_each_run_path(&mut |path: &Path| {
+                    let _ = self.set_job_id(path, job_id);
+                });
+            }
         }
         Ok(())
+    }
+
+    pub fn get_job_task_format(&self, loc: &Path) -> SqliteResult<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT job_id, task_idx FROM experiments WHERE path = ?1",
+                params![loc.to_string_lossy().as_ref()],
+                |row| {
+                    let job_id: Option<String> = row.get(0)?;
+                    let task_idx: Option<usize> = row.get(1)?;
+                    
+                    match (job_id, task_idx) {
+                        (Some(job_id), Some(task_idx)) => {
+                            Ok(Some(format!("{}_{}", job_id, task_idx)))
+                        }
+                        _ => Ok(None),
+                    }
+                },
+            )
+            .optional()
+            .map(|opt| opt.flatten()) // Convert Option<Option<String>> to Option<String>
+    }
+
+    /// Get all paths with a specific status
+    #[allow(dead_code)]
+    pub fn get_paths_with_status(&self, status: &JobStatus) -> SqliteResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path FROM experiments WHERE status = ?1"
+        )?;
+        let rows = stmt.query_map(params![status.as_ref()], |row| {
+            let path_str: String = row.get(0)?;
+            Ok(PathBuf::from(path_str))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get all entries (useful for debugging or migration)
+    #[allow(dead_code)]
+    pub fn get_all_entries(&self) -> SqliteResult<Vec<(PathBuf, Option<String>, Option<usize>, JobStatus)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, job_id, task_idx, status FROM experiments"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let path_str: String = row.get(0)?;
+            let job_id: Option<String> = row.get(1)?;
+            let task_idx: Option<usize> = row.get(2)?;
+            let status_str: String = row.get(3)?;
+            let status = JobStatus::from_str(&status_str)
+                .or_else(|_| Err(rusqlite::Error::InvalidQuery))?;
+            
+            Ok((PathBuf::from(path_str), job_id, task_idx, status))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
 }

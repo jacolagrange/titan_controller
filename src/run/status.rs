@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use strum_macros::{AsRefStr, EnumString};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, AsRefStr, EnumString)]
 pub enum JobStatus {
     TOSUBMIT,
     SUBMITTED,

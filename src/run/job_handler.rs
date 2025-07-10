@@ -33,7 +33,7 @@ impl JobHandler{
         JobHandler{hpc_handler, temp_path}
     }
 
-    pub fn submit_jobs(&self, experiment_path: &str, dry_run: &bool) -> Result<(), std::io::Error> {
+    pub fn submit_jobs(&self, experiment_path: &str, dry_run: &bool) -> Result<(), Box<dyn std::error::Error>> {
         //Get experiments parameters
         let experiment_path = Path::new(experiment_path);
         let parser = ParseExperiment::new(&experiment_path);
@@ -42,17 +42,14 @@ impl JobHandler{
         let dst = parser.get_exp_dst();
         let _ = write_submit_job_map(&experiment, &dst);
 
-        let mut cur_db = match ExperimentsDataBase::from_cache() {
-            Ok(db) => db,
-            _ => ExperimentsDataBase::new(),
-        };
+        let mut cur_db = ExperimentsDataBase::new()?;
 
         //remove existing benchmarks
         if ! experiment.keep_state(&cur_db, &[JobStatus::TOSUBMIT, JobStatus::FAILED], &true) {
             println!("Experiment is already fully done, nothing to do... bye");
             return Ok(());
         }
-        cur_db.add_new_experiment(&experiment);
+        let _ = cur_db.add_new_experiment(&experiment);
 
         if ! dry_run {
             //Obtain a unique hash from the server
@@ -61,10 +58,8 @@ impl JobHandler{
             for benchmark_suite in &mut experiment.benchmark_suites {
                 self.submit_one_job(benchmark_suite, &hashes.next().unwrap(), &mut cur_db)?;
             }
-            cur_db.set_experiment_status(&experiment, &JobStatus::SUBMITTED)
+            let _ = cur_db.set_experiment_status(&experiment, &JobStatus::SUBMITTED);
         }
-
-        if let Err(e) = cur_db.save_to_cache() { eprintln!("An error happened, when writing down the cache {}", e);}
 
         Ok(())
     }
@@ -80,7 +75,7 @@ impl JobHandler{
             //Now create the experiment files
             let exp_dir = self.create_job_files(benchmark_suite, &job_nr, cur_db)?;
             self.hpc_handler.submit_experiment(&exp_dir);
-            cur_db.set_bench_suite_job_id(&benchmark_suite, &job_nr, &Some(JobStatus::SUBMITTED));
+            let _ = cur_db.set_bench_suite_job_id(&benchmark_suite, &job_nr, &Some(JobStatus::SUBMITTED));
             println!("Submitted job {} (jobid {})", &benchmark_suite.meta_arguments["<JOB>"], &job_nr);
         } else {
             println!("Not all the jobs could be subitted to titan. Run collect, to retry those jobs later");
@@ -107,7 +102,7 @@ impl JobHandler{
                     let dst_exp_path = temp_exp_path.join(&exp_file_path);
                     fill_template(EXECUTE_TEMPLATE.to_owned(), &dst_exp_path, &bench_param.arguments);
 
-                    cur_db.set_task_id(&bench_run_dir, &task_idx);
+                    let _ = cur_db.set_task_id(&bench_run_dir, &task_idx);
 
                     task_idx += 1;
                 }
@@ -116,25 +111,25 @@ impl JobHandler{
         Ok(temp_exp_path)
     }
 
-    pub fn collect_jobs(&mut self, experiment_map_file: &Path) -> Result<(), std::io::Error> {
+    pub fn collect_jobs(&mut self, experiment_map_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let mut experiment = parse_experiment::get_exp_map(&experiment_map_file).unwrap();
-        let mut cur_db = ExperimentsDataBase::from_cache()?;
+        let mut cur_db = ExperimentsDataBase::new()?;
 
         let titan_job_stats = self.hpc_handler.get_jobs_retry(false, None)?;
         let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.get_job_id()).collect();
 
         experiment.for_each_run_path(|path| {
-            if let Some(bench_job_task_id) = cur_db.get_job_task_format(&path){
+            if let Ok(Some(bench_job_task_id)) = cur_db.get_job_task_format(&path){
                 if !titan_job_ids.contains(&bench_job_task_id) {
 
                     let res = self.retrieve_result(&bench_job_task_id, &path);
                     match res {
                         Ok(true) => {
-                            cur_db.set_status(&path, &JobStatus::DONE);
+                            let _ = cur_db.set_status(&path, &JobStatus::DONE);
                         }
                         Ok(false) | Err(_) => {
                             println!("Could not retreive job_id {}.", &bench_job_task_id);
-                            cur_db.set_status(&path, &JobStatus::FAILED);
+                            let _ = cur_db.set_status(&path, &JobStatus::FAILED);
                         }
                     }
                 }
@@ -147,8 +142,6 @@ impl JobHandler{
         } else {
             self.retry_experiment(&experiment, &mut cur_db)?;
         }
-        if let Err(e) = cur_db.save_to_cache() { eprintln!("An error happened, when writing down the cache {}", e);}
-
         Ok(())
     }
 

@@ -4,6 +4,7 @@ pub static JOB_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
 pub static EXECUTE_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/script-template/execute_Sniper.sh"));
 
 pub static EXPERIMENT_DB_NAME: &str = "experiments.json";
+pub static CACHE_DB_NAME: &str = "job_info.sqlite3";
 pub static SNIPER_ARGUMENT_FILE_NAME: &str = "args.json";
 
 pub static TEMP_FOLDER_NAME: &str = "/tmp/titan_controller";
