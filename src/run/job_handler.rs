@@ -119,6 +119,8 @@ impl JobHandler{
         let titan_job_ids: Vec<String> = titan_job_stats.iter().map(|stat| stat.get_job_id()).collect();
 
         experiment.for_each_run_path(|path| {
+            if Ok(Some(JobStatus::SUBMITTED)) != cur_db.get_status(&path) { return; }
+
             if let Ok(Some(bench_job_task_id)) = cur_db.get_job_task_format(&path){
                 if !titan_job_ids.contains(&bench_job_task_id) {
 
