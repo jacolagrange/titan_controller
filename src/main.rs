@@ -1,20 +1,18 @@
+mod hpc;
 mod communication;
-mod credentials;
-use credentials::Credentials;
-use crate::constants::EXPERIMENT_DB_NAME;
-mod stat;
-mod job;
-use job::JobHandler;
-mod fill_template;
-mod experiments;
-mod job_data;
-mod test_job;
+mod manage;
+mod run;
 mod constants;
+mod utils;
 
 use clap::{Parser, ArgGroup};
-use std::str::FromStr;
 use std::path::Path;
 
+use crate::hpc::slurm_handle::SlurmHandler;
+use crate::run::job_handler::JobHandler;
+use crate::communication::credentials::Credentials;
+use crate::constants::EXPERIMENT_DB_NAME;
+use crate::utils::job_id::JobIds;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about=None)]
@@ -24,17 +22,17 @@ use std::path::Path;
                 .args(["list", "submit", "delete", "collect"]),
         ))]
 struct Args{
-    #[arg(long, group="Glist", value_parser = TitanObject::parse_titan_obj)]
-    list: Option<TitanObject>, 
+    #[arg(long, group="Glist", value_parser = HandleObject::parse_titan_obj)]
+    list: Option<HandleObject>, 
 
-    #[arg(long, group="Gsubmit", value_parser = TitanObject::parse_titan_obj)]
-    submit: Option<TitanObject>,
+    #[arg(long, group="Gsubmit", value_parser = HandleObject::parse_titan_obj)]
+    submit: Option<HandleObject>,
 
-    #[arg(long, group="Gdelete", value_parser = TitanObject::parse_titan_obj)]
-    delete: Option<TitanObject>,
+    #[arg(long, group="Gdelete", value_parser = HandleObject::parse_titan_obj)]
+    delete: Option<HandleObject>,
 
-    #[arg(long, group="Gsubmit", value_parser = TitanObject::parse_titan_obj)]
-    collect: Option<TitanObject>,
+    #[arg(long, group="Gsubmit", value_parser = HandleObject::parse_titan_obj)]
+    collect: Option<HandleObject>,
 
     // If we display all the information or restricted to the user. (Only valid with --list)
     #[arg(short, long, requires = "Glist")]
@@ -62,47 +60,22 @@ struct Args{
     dry: bool
 }
 
-//Clap bug? -> Had to encapsulate the vec inside a struct
-#[derive(Debug, Clone)]
-struct JobIds{
-    pub ids: Vec<usize>
-}
-
-impl JobIds{
-    fn parse_jobids(arg: &str) -> Result<Self, std::num::ParseIntError> {
-        let mut ids = Vec::<usize>::new();
-        for part in arg.split(",") {
-            if part.contains("-") {
-                let extremes: Vec<&str> = part.split("-").collect();
-                let first = usize::from_str(extremes[0])?;
-                let last = usize::from_str(extremes[1])? + 1;
-                let mut vals = (first..last).collect();
-                ids.append(&mut vals);
-            } else {
-                ids.push(usize::from_str(part)?);
-            }
-        }
-        Ok(JobIds{ids})
-    }
-}
-
-
 #[derive(Clone, Debug)]
-enum TitanObject {
+enum HandleObject {
     Job,
     VM,
     Trace
 }
 
-impl TitanObject {
+impl HandleObject {
     fn parse_titan_obj(arg: &str) -> Result<Self, String> {
         match arg.to_lowercase().as_str() {
-            "job" => Ok(TitanObject::Job),
-            "jobs" => Ok(TitanObject::Job),
-            "vm" => Ok(TitanObject::VM),
-            "vms" => Ok(TitanObject::VM),
-            "trace" => Ok(TitanObject::Trace),
-            "traces" => Ok(TitanObject::Trace),
+            "job" => Ok(HandleObject::Job),
+            "jobs" => Ok(HandleObject::Job),
+            "vm" => Ok(HandleObject::VM),
+            "vms" => Ok(HandleObject::VM),
+            "trace" => Ok(HandleObject::Trace),
+            "traces" => Ok(HandleObject::Trace),
             _ => Err(format!("{} is not a recognized option, choose: Job|VM|Trace", arg)),
         }
     }
@@ -114,11 +87,12 @@ pub fn main() {
     let creds = Credentials::new().unwrap();
 
     if let Some(titan_obj) = args.list {
-        //let titan_obj = TitanObject::validate_value_cli(titan_object, "LIST");
+        //let titan_obj = HandleObject::validate_value_cli(titan_object, "LIST");
         match titan_obj {
-            TitanObject::Job => {
-                let s = JobHandler::new(creds,args.all,args.completed);
-                let res = s.print_jobs();
+            HandleObject::Job => {
+                let hpc_handler = SlurmHandler::new(creds);
+                //let job_handler = JobHandler::new(hpc_handler);
+                let res = hpc_handler.print_jobs(args.all, args.completed);
                 match res {
                     Ok(_) => {}
                     Err(e) => {
@@ -127,8 +101,8 @@ pub fn main() {
                     }
                 }
             }
-            TitanObject::VM => {
-                let res = stat::print_vms();
+            HandleObject::VM => {
+                let res = manage::docker::list_dockerfiles();
                 match res {
                     Ok(_) => {}
                     Err(e) => {
@@ -137,8 +111,8 @@ pub fn main() {
                     }
                 }
             }
-            TitanObject::Trace => {
-                let res = stat::print_traces();
+            HandleObject::Trace => {
+                let res = manage::traces::list_traces();
                 match res {
                     Ok(_) => {}
                     Err(e) => {
@@ -149,12 +123,13 @@ pub fn main() {
             }
         }
     } else if let Some(titan_obj) = args.delete {
-        //let titan_obj = TitanObject::validate_value_cli(titan_object, "DELETE");
+        //let titan_obj = HandleObject::validate_value_cli(titan_object, "DELETE");
         match titan_obj {
-            TitanObject::Job => {
+            HandleObject::Job => {
                 if let Some(jobids) = args.jobid {
-                    let s = JobHandler::new(creds, false, None);
-                    let res = s.delete_jobs(jobids.ids);
+                    let hpc_handler = SlurmHandler::new(creds);
+                    //let job_handler = JobHandler::new(hpc_handler);
+                    let res = hpc_handler.delete_jobs(jobids.ids);
                     match res {
                         Ok(_) => {}
                         Err(e) => {
@@ -164,8 +139,8 @@ pub fn main() {
                     }
                 }
             }
-            TitanObject::VM => {
-                let res = stat::delete_vm(&args.name.unwrap());
+            HandleObject::VM => {
+                let res = manage::docker::delete_dockerfile(&args.name.unwrap());
                 match res {
                     Ok(_) => {}
                     Err(e) => {
@@ -180,10 +155,10 @@ pub fn main() {
         }
     } else if let Some(titan_obj) = args.submit {
         match titan_obj {
-            TitanObject::VM => {
+            HandleObject::VM => {
                 if let Some(paths) = args.path {
                     let dockerfile_path = Path::new(&paths[0]);
-                    let res = stat::upload_dockerfile(dockerfile_path);
+                    let res = manage::docker::upload_dockerfile(dockerfile_path);
                     match res {
                         Ok(_) => {}
                         Err(e) => {
@@ -193,10 +168,10 @@ pub fn main() {
                     }
                 }
             }
-            TitanObject::Trace => {
+            HandleObject::Trace => {
                 if let Some(paths) = args.path {
                     let trace_path = Path::new(&paths[0]);
-                    let res = stat::upload_trace(trace_path);
+                    let res = manage::traces::upload_trace(trace_path);
                     match res {
                         Ok(_) => {}
                         Err(e) => {
@@ -206,13 +181,13 @@ pub fn main() {
                     }
                 }
             }
-            TitanObject::Job => {
-                let s = JobHandler::new(creds, false, None);
+            HandleObject::Job => {
+                let hpc_handler = SlurmHandler::new(creds);
+                let job_handler = JobHandler::new(hpc_handler);
                 let paths = args.path.unwrap();
-                if paths.len() >= 2 {
+                if paths.len() >= 1 {
                     let experiment_path = &paths[0];
-                    let benchmarks_path = &paths[1];
-                    let res = s.submit_job(experiment_path, benchmarks_path, &args.dry);
+                    let res = job_handler.submit_jobs(experiment_path, &args.dry);
                     match res {
                         Ok(_) => {}
                         Err(e) => {
@@ -221,17 +196,18 @@ pub fn main() {
                         }
                     }
                 } else {
-                    eprintln!("You need to provide an experiment and an benchmarks path to submit a Job");
+                    eprintln!("You need to provide an experiment json file to run an experiment");
                 }
             }
         }
     } else if let Some(titan_obj) = args.collect {
         match titan_obj {
-            TitanObject::Job => {
-                let mut s = JobHandler::new(creds, false, None);
+            HandleObject::Job => {
+                let hpc_handler = SlurmHandler::new(creds);
+                let mut job_handler = JobHandler::new(hpc_handler);
                 if let Some(paths) = args.path {
                     let experiment_map_path = Path::new(&paths[0]);
-                    let res = s.collect_jobs(&experiment_map_path);
+                    let res = job_handler.collect_jobs(&experiment_map_path);
                     match res {
                         Ok(_) => {}
                         Err(e) => {

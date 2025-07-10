@@ -25,12 +25,8 @@ def create_connection(db_file: pathlib.Path) -> sqlite3.Connection:
         c.execute("select * from `names`")
         c.close()
     except sqlite3.Error as e:
-        fd = open(db_file.parent.joinpath("titan_data.txt"), "r")
-        lines = fd.readlines()
-        fd.close()
         fd = open("fails.txt", "a+")
         fd.write(f"{db_file.parent}\n")
-        fd.writelines(lines)
         fd.close()
         print("error at", db_file, e)
         conn = None
@@ -63,7 +59,7 @@ def get_metric_values_perf_model(conn: sqlite3.Connection, desired_metrics: List
     cur = conn.cursor()
 
     namefilter = ""
-    if len(desired_metrics) > 0: # no need to read all those names
+    if desired_metrics is not None and len(desired_metrics) > 0: # no need to read all those names
         names = read_metricnames(conn)
         # print(names)
 
@@ -98,14 +94,20 @@ def get_config_values(cfg_file: pathlib.Path, desired_metrics: List[Dict[str, ob
 
     values = []
     idx = 0
-    for metric in desired_metrics:
-        if metric["where"] != "config":
-            continue
-        metric_list = metric["metric"].split("/")
-        metric_path = "/".join(metric_list[:-1])
-        metric_key = metric_list[-1]
-        values.append((0, 2000 + idx, metric_path, metric_key, config[metric_path][metric_key]))
-        idx += 1
+    if desired_metrics is not None and len(desired_metrics) > 0:
+        for metric in desired_metrics:
+            if metric["where"] != "config":
+                continue
+            metric_list = metric["metric"].split("/")
+            metric_path = "/".join(metric_list[:-1])
+            metric_key = metric_list[-1]
+            values.append((0, 2000 + idx, metric_path, metric_key, config[metric_path][metric_key]))
+            idx += 1
+    else:
+        for section in config.sections():
+            for key, value in config.items(section):
+                values.append((0, 2000 + idx, section, key, value))
+                idx += 1
 
     return values
 
@@ -167,7 +169,7 @@ def power_stack(power_dat, powertype = 'total', nocollapse = False):
 
 McPat_PATH = f"{SNIPER_PATH}/tools/mcpat.py"
 def get_McPat(experience_path: pathlib.Path, desired_metrics: List[Dict[str, object]], time_in_seconds: float):
-    if not any([metric["where"] == "McPat" for metric in desired_metrics]):
+    if desired_metrics is not None and len(desired_metrics) > 0 and not any([metric["where"] == "McPat" for metric in desired_metrics]):
         return []
 
     cmd = [McPat_PATH, "-d", experience_path, "--no-graph", "--no-text"]
@@ -185,28 +187,35 @@ def get_McPat(experience_path: pathlib.Path, desired_metrics: List[Dict[str, obj
 
     values = []
     idx = 0
-    for metric in desired_metrics:
-        if metric["where"] != "McPat":
-            continue
-        metric_to_use = metric["metric"][1]
-        dict_use = power_values
-        if metric_to_use == "Power":
+    if desired_metrics is not None and len(desired_metrics) > 0:
+        for metric in desired_metrics:
+            if metric["where"] != "McPat":
+                continue
+            metric_to_use = metric["metric"][1]
             dict_use = power_values
-        elif metric_to_use == "Energy":
-            dict_use = energy_values
-        elif metric_to_use == "Area":
-            dict_use = area_values
+            if metric_to_use == "Power":
+                dict_use = power_values
+            elif metric_to_use == "Energy":
+                dict_use = energy_values
+            elif metric_to_use == "Area":
+                dict_use = area_values
 
-        for k, v in dict_use.items():
-            values.append((0, 4000 + idx, metric_to_use, k, v))
-            idx += 1
+            for k, v in dict_use.items():
+                values.append((0, 4000 + idx, metric_to_use, k, v))
+                idx += 1
+
+    else:
+        for (metric_to_use, dict_use) in [("Power", power_values), ("Energy", energy_values), ("Area", area_values)]:
+            for k, v in dict_use.items():
+                values.append((0, 4000 + idx, metric_to_use, k, v))
+                idx += 1
             
     return values
 
 
 CPI_SCRIPT_PATH = f"{SNIPER_PATH}/tools/cpistack.py"
 def get_CPI_stack(experience_path: pathlib.Path, desired_metrics: List[Dict[str, object]]):
-    if not any([metric["where"] == "CPI-stack" for metric in desired_metrics]):
+    if desired_metrics is not None and len(desired_metrics) > 0 and not any([metric["where"] == "CPI-stack" for metric in desired_metrics]):
         return []
 
     cmd = [CPI_SCRIPT_PATH, "-d", str(experience_path), "|", "tr", "-s", "\" \""]
@@ -254,6 +263,7 @@ def get_all_paths_per_experiment(exp_dir_name : str) -> List[pathlib.Path]:
 
 reg_sim_time = re.compile("\[SNIPER\] Elapsed time: [0-9]*\.[0-9]* seconds")
 def read_sim_time(output_file: pathlib.Path) -> float:
+    if output_file is None: return 0
     global reg_sim_time
     elapsed_time = 0
     file_descriptor = open(output_file, "r")
@@ -336,8 +346,17 @@ def _get_raw_values_of_version(exp_path: pathlib.Path, metrics, extra_files: Lis
                 df_tmp.loc[:, "benchmark"] = benchmark_name
                 # Lastly adding all the meta-experiment-values (values about the experiment, which were passed as arguements when running) 
         
-                df_exp = pandas.concat([df_exp, df_tmp], ignore_index=True)
-
+                try:
+                    df_exp = pandas.concat([df_exp, df_tmp], axis=0, ignore_index=True)
+                except Exception as e:
+                    import traceback
+                    print(f"Issue handeling at {exp_path} nr {exp_nr.stem}, ignoring and continue")
+                    print(f"df_exp:\n{df_exp}")
+                    print(f"df_tmp:\n{df_tmp}")
+                    print(e)
+                    traceback.print_exc()
+                    exit(0)
+               
             except Exception as e:
                 import traceback
                 print(f"Issue handeling {experiment_name} nr {exp_nr.stem}, ignoring and continue")
@@ -366,7 +385,7 @@ def get_values(dirpath: pathlib.Path, metrics: List[Dict[Tuple[str, str],List[in
     # go over all the files (here per experiment variation)
     for exp_path in experiments:
         df_exp = _get_raw_values_of_version(exp_path, metrics, extra_files) 
-        df_exp = df_exp.astype({"value": np.float64})
+        df_exp["value"] = pandas.to_numeric(df_exp["value"], errors="coerce") #This will change all pure-string values to NAN
 
         # Take average accross experiment numbers
         # Once all experients of that version is processed in df_exp. Will calculate first, the mean per each simulation core count.
@@ -473,11 +492,32 @@ def make_ipc(df: pandas.DataFrame) -> pandas.DataFrame:
     return ret_df
 
 def read_args(path: str) -> object:
-    read_p = pathlib.Path(path)
+    read_p = pathlib.Path(path) / "args.json"
     dict_args = {}
-    with open(f"{read_p}/args.json", "r") as json_file:
-        dict_args = json.load(json_file)
+    if not read_p.exists():
+        print(f"WARNING args.json at path {read_p} does not exist, proceeding without")
+        exit(1)
+        return None
+    with open(read_p, "r") as json_file:
+        try:
+            dict_args = json.load(json_file)
+        except Exception as e:
+            import traceback
+            print(f"Something went wrong reading json_file {read_p}")
+            print(e)
+            traceback.print_exc()
+            exit(1)
         json_file.close()
 
     return dict_args
 
+def get_experiment_baseline(json_path: str) -> dict:
+    experiment_path = pathlib.Path(json_path)
+    baseline = {}
+    if not experiment_path.exists():
+        return baseline
+    with open(experiment_path, "r") as json_file:
+        data = json.load(json_file)
+        for param_name, param_values in data["sniper_parameters"]["parameters"][0]["values"].items():
+            baseline[param_name] = param_values[0]
+    return baseline

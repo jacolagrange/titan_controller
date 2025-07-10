@@ -4,8 +4,13 @@ pub static JOB_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
 pub static EXECUTE_TEMPLATE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/script-template/execute_Sniper.sh"));
 
 pub static EXPERIMENT_DB_NAME: &str = "experiments.json";
+pub static CACHE_DB_NAME: &str = "job_info.sqlite3";
 pub static SNIPER_ARGUMENT_FILE_NAME: &str = "args.json";
 
 pub static TEMP_FOLDER_NAME: &str = "/tmp/titan_controller";
+pub static CACHE_FOLDER_NAME: &str = "/home/jaime/.cache/titan_controller";
 
 pub static TITAN_SUBMIT_DIR: &str = "/home/slurmslave/jobs/submitted/.";
+
+pub static LOCAL_SNIPER_DIR: &str = "/home/jaime/Documents/sniperAFS/sniper";
+pub static LOCAL_BENCHMARK_DIR: &str = "/home/jaime/Vault/benchmarks/benchmarks";

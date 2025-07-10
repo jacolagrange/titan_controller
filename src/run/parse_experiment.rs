@@ -1,14 +1,22 @@
 use json;
 use std::fs::File;
 use std::io::Read;
-use std::io::Write as IoWrite;
 use std::fmt::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
 use crate::constants::EXPERIMENT_DB_NAME;
-use crate::job_data::{Arguments, JobArgument, ExperimentArgument, JobStatus, BenchmarkArgument};
-use std::str::FromStr;
+use crate::run::{
+    experiment::Experiment,
+    benchmark_suite::BenchmarkSuite,
+    simulator_parameter::SimulatorParameter,
+    benchmark_parameter::BenchmarkParameter,
+    benchmark_run::BenchmarkRun
+};
 
+use std::str::FromStr;
+use crate::run::caching;
+
+#[derive(PartialEq)]
 enum ExperimentType{
     BINARY,
     TRACE,
@@ -28,45 +36,57 @@ impl FromStr for ExperimentType {
 }
 
 enum VmType {
-    VBOX,
     DOCKER
 }
 
 #[derive(Debug)]
 pub struct ParseExperiment{
     exp: json::JsonValue,
-    bench: json::JsonValue
+    bench_suites: json::JsonValue
 }
 
 impl ParseExperiment{
-    pub fn new(exp_json_path: &Path, bench_json_path: &Path) -> Self{
-        let mut exp_json_file = File::open(exp_json_path).unwrap();
+    pub fn new(exp_json_path: &Path) -> Self{
         let mut exp_json_data = String::new();
-        let _ = exp_json_file.read_to_string(&mut exp_json_data).unwrap();
-        drop(exp_json_file);
+        File::open(exp_json_path).unwrap()
+            .read_to_string(&mut exp_json_data)
+            .unwrap();
         let exp = json::parse(&exp_json_data).unwrap();
 
-        let mut bench_json_file = File::open(bench_json_path).unwrap();
-        let mut bench_json_data = String::new();
-        let _ = bench_json_file.read_to_string(&mut bench_json_data).unwrap();
-        drop(bench_json_file);
-        let bench = json::parse(&bench_json_data).unwrap();
+        let mut combined_suites = json::JsonValue::new_array();
+        for bench_location in exp["benchmarks"].members() {
+            let mut bench_path = PathBuf::from(bench_location.to_string());
+            if ! bench_path.is_absolute() {
+                bench_path = exp_json_path.parent().unwrap().join(bench_path);
+            }
+            println!("Using benchmark json file {:?}", bench_path);
 
-        return Self {exp, bench}
+            let mut bench_json_data = String::new();
+            File::open(bench_path).unwrap()
+                .read_to_string(&mut bench_json_data)
+                .unwrap();
+            let bench = json::parse(&bench_json_data).unwrap();
+            for suite in bench["suites"].members() {
+                combined_suites.push(suite.clone()).unwrap();
+            }
+        }
+        let bench_suites = json::object! {
+            "suites" => combined_suites
+        };
+
+        Self {exp, bench_suites}
     }
 
-    pub fn get_arguments(&self) -> Arguments {
-        let mut job_args = Vec::new();
-        let job_git_repos: String = self.get_git_repos(&self.exp);
-        let job_mounts_vbox: String = self.get_vm_mounts(&self.exp, VmType::VBOX);
+    pub fn get_arguments(&self) -> Experiment {
+        let mut benchmark_suites = Vec::new();
+        let job_git_repos = self.get_git_repos(&self.exp);
         let job_mounts_docker: String = self.get_vm_mounts(&self.exp, VmType::DOCKER);
 
-        for suite in self.bench["suites"].members() {
-            let mut git_repos: String = self.get_git_repos(&suite);
-            git_repos.push_str(&job_git_repos);
+        for suite in self.bench_suites["suites"].members() {
+            let mut git_repos = self.get_git_repos(&suite);
+            git_repos.extend(job_git_repos.clone());
+            let git_repos_script = self.make_git_checkout_script(&git_repos);
 
-            let mut mounts_vbox: String = self.get_vm_mounts(&suite, VmType::VBOX);
-            mounts_vbox.push_str(&job_mounts_vbox);
             let mut mounts_docker: String = self.get_vm_mounts(&suite, VmType::DOCKER);
             mounts_docker.push_str(&job_mounts_docker);
 
@@ -84,26 +104,27 @@ impl ParseExperiment{
                 (String::from("<MEMORY>"),    self.get_tot_memory().to_string()),
                 //(String::from("<TASKS>"),     total_jobs.to_string()),
                 (String::from("<VM_NAME>"),   json_value_to_string(&job_vals["vm_name"],"")),
-                (String::from("<GIT-REPOSITORIES>"), git_repos),
-                (String::from("<Virtualbox_MOUNTS>"),    mounts_vbox),
+                (String::from("<GIT-REPOSITORIES>"), git_repos_script),
                 (String::from("<DOCKER_MOUNTS>"),    mounts_docker),
             ]);
 
-            let experiment_arguments = self.get_exp_arguments(&suite, nr_runs);
+            let simulator_parameters = self.get_exp_arguments(&suite, nr_runs);
 
-            let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
-            let host_dst_path = Path::new(&host_dst_path_str);
+            //let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
+            //let host_dst_path = Path::new(&host_dst_path_str);
 
-            job_args.push(
-                JobArgument{
+            let traces = self.get_traces_map(&suite);
+            let cache_path = caching::get_tools_hash_path(&git_repos, &traces);
+
+            benchmark_suites.push(
+                BenchmarkSuite{
                     suite: json_value_to_string(&suite["suite"],""),
                     meta_arguments, 
-                    experiment_arguments,
-                    host_dst_path: host_dst_path.to_path_buf(),
-                    job_nr: None
+                    simulator_parameters,
+                    host_dst_path: cache_path.to_path_buf()
                 });
         }
-        return Arguments{job_arguments: job_args};
+        return Experiment{benchmark_suites};
     }
 
 
@@ -121,16 +142,34 @@ impl ParseExperiment{
         core_nr * mem_per_core
     }
 
-    fn get_git_repos(&self, args_obj: &json::JsonValue) -> String {
-        let mut git_repos = String::new();
+    fn get_git_repos(&self, args_obj: &json::JsonValue) -> HashMap<String, String> {
+        let mut git_repos = HashMap::new();
         if args_obj.has_key("git") {
             for (repo, branch) in args_obj["git"].entries() {
                 let repo_name = repo.strip_suffix("_branch").unwrap();
                 let branch_str = branch.as_str().unwrap();
-                let _ = write!(git_repos, "checkout_git_repo {repo_name} {branch_str}\n");
+                git_repos.insert(repo_name.to_string(), branch_str.to_string());
             }
         }
         return git_repos;
+    }
+
+    fn make_git_checkout_script(&self, git_repos: &HashMap<String, String>) -> String {
+        git_repos
+            .iter()
+            .map(|(repo, branch)| format!("checkout_git_repo {repo} {branch}\n"))
+            .collect()
+    }
+
+    fn get_traces_map(&self, benchmark_suite: &json::JsonValue) -> Option<HashMap<String, String>> {
+        let experiment_type = ExperimentType::from_str(&json_value_to_string(&benchmark_suite["type"],"")).unwrap();
+        if experiment_type == ExperimentType::TRACE {
+            let mut trace_map = HashMap::new();
+            trace_map.insert(json_value_to_string(&benchmark_suite["suite"], ""), json_value_to_string(&benchmark_suite["version"], ""));
+            Some(trace_map)
+        } else {
+            None
+        }
     }
 
     fn get_vm_mounts(&self, args_obj: &json::JsonValue, vm_type: VmType) -> String {
@@ -141,7 +180,6 @@ impl ParseExperiment{
                 let repo_name = repo.strip_suffix("_branch").unwrap();
                 let repo_name_upper = repo_name.to_uppercase();
                 let mount_str: String = match vm_type{
-                    VmType::VBOX => format!("mount_vbox {repo_name}_mount /home/slurmslave/{repo_name}/${{{repo_name_upper}_GIT_ID}}\n"),
                     VmType::DOCKER => format!("-v /home/slurmslave/{repo_name}/${{{repo_name_upper}_GIT_ID}}:${{{repo_name}_mount}} \\\n\t"),
                 };
                 let _ = write!(vm_mounts, "{}", mount_str);
@@ -154,7 +192,6 @@ impl ParseExperiment{
                 let host_path_str = host_path.as_str().unwrap();
                 if host_path_str.to_lowercase() == "none" {continue;}
                 let mount_str: String = match vm_type{
-                    VmType::VBOX => format!("mount_vbox {mnt_name} {host_path}\n"),
                     VmType::DOCKER => format!("-v {host_path}:${{{mnt_name}}} \\\n\t"),
                 };
                 let _ = write!(vm_mounts, "{}", mount_str);
@@ -167,8 +204,8 @@ impl ParseExperiment{
     /*
      * Function to process all the arguments for the benchmark themselves
      */
-    fn get_exp_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<ExperimentArgument> {
-        let mut exp_arguments: Vec<ExperimentArgument> = Vec::new();
+    fn get_exp_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<SimulatorParameter> {
+        let mut exp_arguments: Vec<SimulatorParameter> = Vec::new();
         let sniper_arg_keys = self.get_sniper_argument_keys();
         let sniper_arg_maps = self.get_sniper_arguments(&sniper_arg_keys);
         let mut sniper_str_arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
@@ -182,24 +219,25 @@ impl ParseExperiment{
             let mut sniper_str_arg: String = sniper_str_arguments.clone();
             for (key, val) in sniper_arg {sniper_str_arg = sniper_str_arg.replace(&*format!("{{{key}}}"), &val);}
 
-            let mut benchmarks = benchmarks_arguments.clone();
-            for benchmark in &mut benchmarks {
-                benchmark.arguments.get_mut("<ARGUMENTS>").unwrap().insert_str(0, &sniper_str_arg);
+            let mut benchmark_parameters = benchmarks_arguments.clone();
+            for benchmark_parameter in &mut benchmark_parameters {
+                benchmark_parameter.arguments.get_mut("<ARGUMENTS>").unwrap().insert_str(0, &sniper_str_arg);
             }
 
-            let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
+            //let sniper_dir_name = self.get_sniper_dir_name(&sniper_arg_keys, sniper_arg);
+            let simulator_dir_name = caching::get_hash_sniper_config(&sniper_str_arg).to_string();
             
             exp_arguments.push(
-                ExperimentArgument{
-                    sniper_dir_name,
+                SimulatorParameter{
+                    simulator_dir_name,
                     variable_sniper_parameters: sniper_arg.clone(),
-                    benchmarks
+                    benchmark_parameters
                 });
         }
         return exp_arguments;
     }
 
-    fn get_benchmark_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<BenchmarkArgument> {
+    fn get_benchmark_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<BenchmarkParameter> {
         let mut benchmark_arguments = Vec::new();
 
         let benchmark_parameters = json_value_to_string(&benchmark_suite["sniper_args"], " ");
@@ -262,22 +300,18 @@ impl ParseExperiment{
 
             let all_arguments = format!("{benchmark_parameters} {benchmark_str}");
 
-            for run_idx in 0..nr_runs {
-                let arguments = HashMap::from([
-                    (String::from("<BENCH_BUILD_DIR>"), benchmark_build_path.clone()),
-                    (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
-                    (String::from("<SETUP_CMD>"), setup_cmd.clone()),
-                    (String::from("<ARGUMENTS>"), all_arguments.clone())
-                ]);
-                benchmark_arguments.push(
-                    BenchmarkArgument{
-                        arguments,
-                        benchmark_name: benchmark_name.clone(),
-                        run_idx,
-                        task_idx: None,
-                        status: JobStatus::TOSUBMIT
-                    });
-            }
+            let arguments = HashMap::from([
+                (String::from("<BENCH_BUILD_DIR>"), benchmark_build_path.clone()),
+                (String::from("<BUILD_COMMAND>"), benchmark_build.clone()),
+                (String::from("<SETUP_CMD>"), setup_cmd.clone()),
+                (String::from("<ARGUMENTS>"), all_arguments.clone())
+            ]);
+
+            let benchmark_runs: Vec<BenchmarkRun> = (0..nr_runs)
+                .map(|run_idx| BenchmarkRun { run_idx })
+                .collect();
+
+            benchmark_arguments.push( BenchmarkParameter{ arguments, benchmark_name, benchmark_runs });
         }
         return benchmark_arguments;
     }
@@ -320,6 +354,7 @@ impl ParseExperiment{
         return sniper_args;
     }
 
+    #[allow(dead_code)]
     fn get_sniper_dir_name(&self, sniper_arg_keys: &Vec<String>, sniper_arg_vals: &HashMap<String, String>) -> String {
         let mut sniper_dir_vals: Vec<&str> = Vec::new();
         for key in sniper_arg_keys {
@@ -330,27 +365,12 @@ impl ParseExperiment{
     }
 
 
-    pub fn create_submit_job_map(&self, job_arguments: &Arguments) {
+    #[allow(dead_code)]
+    pub fn get_exp_dst(&self) -> PathBuf {
         let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
-        let host_dst_path = Path::new(&host_dst_path_str);
-        let _ = write_submit_job_map(job_arguments, host_dst_path);
+        Path::new(&host_dst_path_str).to_path_buf()
     }
 }
-
-pub fn write_submit_job_map(job_arguments: &Arguments, host_dst_path: &Path) -> std::io::Result<()> {
-    let file_path = if host_dst_path.file_name().unwrap().to_str().unwrap() != EXPERIMENT_DB_NAME {
-        host_dst_path.join(EXPERIMENT_DB_NAME)
-    } else {
-        host_dst_path.to_path_buf()
-    };
-
-    let file = File::create(file_path)?;
-    let mut writer = std::io::BufWriter::new(file);
-    let _ = serde_json::to_writer_pretty(&mut writer, job_arguments)?;
-    writer.flush()?;
-    Ok(())
-}
-
 
 /* Function that creates all the possible combinations of values
  * Output is a vector of each combination, and a combination is a vector of the string combinations
@@ -415,7 +435,7 @@ fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
     }
 }
 
-pub fn get_job_map(job_map_path: &Path) -> std::io::Result<Arguments> {
+pub fn get_exp_map(job_map_path: &Path) -> std::io::Result<Experiment> {
     let file_path = if job_map_path.file_name().unwrap().to_str().unwrap() != EXPERIMENT_DB_NAME {
         job_map_path.join(EXPERIMENT_DB_NAME)
     } else {
@@ -424,6 +444,6 @@ pub fn get_job_map(job_map_path: &Path) -> std::io::Result<Arguments> {
 
     let file = File::open(&file_path)?;
     let mut reader = std::io::BufReader::new(file);
-    let job_arguments: Arguments = serde_json::from_reader(&mut reader)?;
+    let job_arguments: Experiment = serde_json::from_reader(&mut reader)?;
     Ok(job_arguments)
 }
