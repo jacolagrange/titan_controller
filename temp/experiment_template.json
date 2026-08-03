@@ -6,6 +6,9 @@
 		"vm_name":"sniper2404",
 		"runs":1
 	},
+  "benchmarks": [
+		"./benchmark_template.json"
+	],
 	"git":{
 		"sniper_branch":"jaime-SVR"
 	},
