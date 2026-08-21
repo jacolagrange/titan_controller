@@ -83,11 +83,11 @@ impl ParseExperiment{
         let job_mounts_docker: String = self.get_vm_mounts(&self.exp, VmType::DOCKER);
 
         for suite in self.bench_suites["suites"].members() {
-            let mut git_repos = self.get_git_repos(&suite);
+            let mut git_repos = self.get_git_repos(suite);
             git_repos.extend(job_git_repos.clone());
             let git_repos_script = self.make_git_checkout_script(&git_repos);
 
-            let mut mounts_docker: String = self.get_vm_mounts(&suite, VmType::DOCKER);
+            let mut mounts_docker: String = self.get_vm_mounts(suite, VmType::DOCKER);
             mounts_docker.push_str(&job_mounts_docker);
 
             let job_vals = &self.exp["job"];
@@ -108,12 +108,12 @@ impl ParseExperiment{
                 (String::from("<DOCKER_MOUNTS>"),    mounts_docker),
             ]);
 
-            let simulator_parameters = self.get_exp_arguments(&suite, nr_runs);
+            let simulator_parameters = self.get_exp_arguments(suite, nr_runs);
 
             //let host_dst_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
             //let host_dst_path = Path::new(&host_dst_path_str);
 
-            let traces = self.get_traces_map(&suite);
+            let traces = self.get_traces_map(suite);
             let cache_path = caching::get_tools_hash_path(&git_repos, &traces);
 
             benchmark_suites.push(
@@ -124,7 +124,8 @@ impl ParseExperiment{
                     host_dst_path: cache_path.to_path_buf()
                 });
         }
-        return Experiment{benchmark_suites};
+
+        Experiment{benchmark_suites}
     }
 
 
@@ -151,7 +152,8 @@ impl ParseExperiment{
                 git_repos.insert(repo_name.to_string(), branch_str.to_string());
             }
         }
-        return git_repos;
+
+        git_repos
     }
 
     fn make_git_checkout_script(&self, git_repos: &HashMap<String, String>) -> String {
@@ -198,7 +200,7 @@ impl ParseExperiment{
             }
         }
 
-        return vm_mounts;
+        vm_mounts
     }
 
     /*
@@ -209,15 +211,15 @@ impl ParseExperiment{
         let sniper_arg_keys = self.get_sniper_argument_keys();
         let sniper_arg_maps = self.get_sniper_arguments(&sniper_arg_keys);
         let mut sniper_str_arguments = json_value_to_string(&self.exp["sniper_parameters"]["arguments"], " ");
-        sniper_str_arguments.push_str(" ");
-        let benchmarks_arguments = self.get_benchmark_arguments(&benchmark_suite, nr_runs);
+        sniper_str_arguments.push(' ');
+        let benchmarks_arguments = self.get_benchmark_arguments(benchmark_suite, nr_runs);
 
         //let host_job_exp_meta_info_path_str = json_value_to_string(&self.exp["host_destination_path"], "");
         //let host_job_exp_meta_info_path = Path::new(&host_job_exp_meta_info_path_str);
         
         for sniper_arg in &sniper_arg_maps {
             let mut sniper_str_arg: String = sniper_str_arguments.clone();
-            for (key, val) in sniper_arg {sniper_str_arg = sniper_str_arg.replace(&*format!("{{{key}}}"), &val);}
+            for (key, val) in sniper_arg {sniper_str_arg = sniper_str_arg.replace(&*format!("{{{key}}}"), val);}
 
             let mut benchmark_parameters = benchmarks_arguments.clone();
             for benchmark_parameter in &mut benchmark_parameters {
@@ -234,7 +236,8 @@ impl ParseExperiment{
                     benchmark_parameters
                 });
         }
-        return exp_arguments;
+
+        exp_arguments
     }
 
     fn get_benchmark_arguments(&self, benchmark_suite: &json::JsonValue, nr_runs: usize) -> Vec<BenchmarkParameter> {
@@ -313,7 +316,8 @@ impl ParseExperiment{
 
             benchmark_arguments.push( BenchmarkParameter{ arguments, benchmark_name, benchmark_runs });
         }
-        return benchmark_arguments;
+
+        benchmark_arguments
     }
 
     // Get the key of the first parameter-set, assuming those are present in the other sets as well
@@ -323,12 +327,13 @@ impl ParseExperiment{
         let param_values = &self.exp["sniper_parameters"]["parameters"][0]["values"];
         let mut keys: Vec<String> = Vec::new();
         for (key, _) in param_values.entries() {keys.push(key.to_string());}
-        return keys;
+
+        keys
     }
 
     // Makes a vector of all the combinations of key-value pairs (i.e. all the experiments) that
     // sniper needs to run. This is done according to the mix-value
-    fn get_sniper_arguments(&self, sniper_arg_keys: &Vec<String>) -> Vec<HashMap<String, String>> {
+    fn get_sniper_arguments(&self, sniper_arg_keys: &[String]) -> Vec<HashMap<String, String>> {
         let mut sniper_args = Vec::new();
         let mut seen = HashSet::new();
 
@@ -345,13 +350,22 @@ impl ParseExperiment{
 
             for combination in param_combinations {
                 if seen.insert(combination.clone()) {
-                    let arg = HashMap::from_iter(std::iter::zip(sniper_arg_keys.clone(), combination));
+                    let arg: HashMap<String, String> = sniper_arg_keys
+                        .iter()
+                        .cloned()
+                        .zip(combination)
+                        .collect();
                     sniper_args.push(arg);
                 }
             }
         }
 
-        return sniper_args;
+        // Default to 1 single run with no parameter substitution if parameters are emtpy
+        if sniper_args.is_empty() {
+            sniper_args.push(HashMap::new());
+        }
+
+        sniper_args
     }
 
     #[allow(dead_code)]
@@ -360,8 +374,8 @@ impl ParseExperiment{
         for key in sniper_arg_keys {
             sniper_dir_vals.push(&sniper_arg_vals[key]);
         }
-        let sniper_dir_name = sniper_dir_vals.join("_");
-        return sniper_dir_name;
+
+        sniper_dir_vals.join("_")
     }
 
 
@@ -385,20 +399,21 @@ fn create_parameter_product_mix(keys: &[String], values: &json::JsonValue) ->Vec
     let mut combinations = Vec::new();
     if keys.len() == 1 {
         for key_value in values[key].members() {
-            combinations.push(vec![json_value_to_string(&key_value, "")]);
+            combinations.push(vec![json_value_to_string(key_value, "")]);
         }
     } else {
         let next_values = create_parameter_product_mix(&keys[1..], values);
 
         for key_value in values[key].members() {
             for next_value in &next_values {
-                let mut val = vec![json_value_to_string(&key_value, "")];
+                let mut val = vec![json_value_to_string(key_value, "")];
                 val.append(&mut next_value.clone());
                 combinations.push(val);
             }
         }
     }
-    return combinations;
+
+    combinations
 }
 
 fn create_parameter_single_mix(keys: &[String], values: &json::JsonValue) ->Vec<Vec<String>> {
@@ -414,18 +429,18 @@ fn create_parameter_single_mix(keys: &[String], values: &json::JsonValue) ->Vec<
     for (i, key) in keys.iter().enumerate() {
         let mut new_combination = default_values.clone();
         for key_value in values[key].members().skip(1) {
-            new_combination[i] = json_value_to_string(&key_value, "");
+            new_combination[i] = json_value_to_string(key_value, "");
             combinations.push(new_combination.clone());
         }
     }
 
-    return combinations;
+    combinations
 }
 
 fn json_value_to_string(json_val: &json::JsonValue, separator: &str) -> String {
     match json_val {
         json::JsonValue::Array(array) => {
-            array.into_iter().map(|x| json_value_to_string(x,"")).collect::<Vec<String>>().join(separator)
+            array.iter().map(|x| json_value_to_string(x,"")).collect::<Vec<String>>().join(separator)
         },
         json::JsonValue::Number(_number) => {json_val.as_isize().unwrap().to_string()},
         json::JsonValue::String(string) => {string.clone()},
