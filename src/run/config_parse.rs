@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use crate::run::sniper_config::SniperConfig;
 use crate::constants::LOCAL_SNIPER_DIR;
@@ -60,13 +59,13 @@ impl ParsedArgs{
     pub fn get_final_config(&self) -> SniperConfig {
         let mut settings = SniperConfig::new();
 
-        let config_dir = Path::new(LOCAL_SNIPER_DIR).join("config");
+        let config_dir = LOCAL_SNIPER_DIR.clone().join("config");
         for config in &self.configs {
             let _ = settings.parse_file(&config_dir.join(format!("{config}.cfg")));
         }
 
         for (key, val) in &self.cmd_settings {
-            settings.set_override(&key, val.as_str());
+            settings.set_override(key, val.as_str());
         }
         
         settings

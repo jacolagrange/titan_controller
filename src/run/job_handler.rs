@@ -26,7 +26,7 @@ pub struct JobHandler {
 
 impl JobHandler{
     pub fn new(hpc_handler: slurm_handle::SlurmHandler) -> Self {
-        let temp_path = Path::new(TEMP_FOLDER_NAME).to_path_buf();
+        let temp_path = TEMP_FOLDER_NAME.clone();
         if ! temp_path.is_dir(){
             let _ = fs::create_dir(&temp_path);
         }

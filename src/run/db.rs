@@ -13,7 +13,7 @@ pub struct ExperimentsDataBase {
 
 impl ExperimentsDataBase {
     pub fn new() -> SqliteResult<Self> {
-        let host_dst_path = Path::new(CACHE_FOLDER_NAME);
+        let host_dst_path = CACHE_FOLDER_NAME.clone();
         let db_path = host_dst_path.join(CACHE_DB_NAME);
 
         if !(host_dst_path.exists() && host_dst_path.is_dir()) {
@@ -61,7 +61,7 @@ impl ExperimentsDataBase {
                 |row| {
                     let status_str: String = row.get(0)?;
                     JobStatus::from_str(&status_str)
-                        .or_else(|_| Err(rusqlite::Error::InvalidQuery))
+                        .map_err(|_| rusqlite::Error::InvalidQuery)
                 },
             )
             .optional()
@@ -170,7 +170,7 @@ impl ExperimentsDataBase {
             let task_idx: Option<usize> = row.get(2)?;
             let status_str: String = row.get(3)?;
             let status = JobStatus::from_str(&status_str)
-                .or_else(|_| Err(rusqlite::Error::InvalidQuery))?;
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
             
             Ok((PathBuf::from(path_str), job_id, task_idx, status))
         })?;

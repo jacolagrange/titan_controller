@@ -44,7 +44,7 @@ impl SlurmHandler{
                 command += &(" --account=".to_owned() + &self.creds.username);
             }
             let start_time = OffsetDateTime::now_utc().checked_sub(Duration::days(days as i64)).unwrap();
-            let sacct_time_format = format_description::parse("[year]-[month]-[day]").unwrap();
+            let sacct_time_format = format_description::parse_borrowed::<3>("[year]-[month]-[day]").unwrap();
             command += &format!(" -S {} --format=JobID,JobName%150,Account,NCPUS,Submit,State%30", start_time.format(&sacct_time_format).unwrap());
             let (mut stdout, _stderr) = ssh::send_command(&command)?;
             stdout = SPACES.replace_all(&stdout, r" ").to_string();
