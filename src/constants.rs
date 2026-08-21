@@ -44,7 +44,7 @@ pub static LOCAL_SNIPER_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     if let Ok(env_path) = env::var("SNIPER_ROOT") {
         PathBuf::from(env_path)
     } else {
-        dirs::cache_dir()
+        dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("Documents/sniperAFS/sniper")
     }
@@ -54,7 +54,7 @@ pub static LOCAL_BENCHMARK_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     if let Ok(env_path) = env::var("BENCHMARK_ROOT") {
         PathBuf::from(env_path)
     } else {
-        dirs::cache_dir()
+        dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("Vault/benchmarks/benchmarks")
     }

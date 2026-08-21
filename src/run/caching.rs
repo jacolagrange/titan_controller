@@ -62,7 +62,7 @@ fn get_hash_git(location: &Path, branch: &str) -> String {
         .arg(branch)
         .current_dir(location)
         .output()
-        .expect("Failed to fetch from origin");
+        .unwrap_or_else(|e| panic!("Failed to fetch from origin at {}: {e}", location.display()));
     
     // Get the commit hash from origin/branch
     let hash_output = Command::new("git")
@@ -73,7 +73,7 @@ fn get_hash_git(location: &Path, branch: &str) -> String {
         .arg("--pretty=format:%H")
         .current_dir(location)
         .output()
-        .expect("Failed to get commit hash");
+        .unwrap_or_else(|e| panic!("Failed to get commit hash at {}: {e}", location.display()));
     
     let commit_hash = String::from_utf8_lossy(&hash_output.stdout)
         .trim()
