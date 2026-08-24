@@ -1,5 +1,11 @@
 # TitanController
 
+> **For the actual working setup on this Titan cluster** — how to submit,
+> where results land, how to add/modify a benchmark — see
+> [RUNBOOK.md](RUNBOOK.md). This README covers generic install/config and
+> the tool's original git-checkout-based design; the runbook documents
+> what we actually use instead and why.
+
 ## Installation
 
 > **Note:** This tool has primarily been tested on Linux. There is no obvious reason why it wouldn't work on other operating systems, but unexpected issues may occur.

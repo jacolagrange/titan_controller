@@ -2,6 +2,7 @@
 name = "titan_controller"
 version = "0.1.0"
 edition = "2021"
+default-run = "titan_controller"
 
 include = ["/src","/script-template",".id"]
 exclude = ["Session.vim", "/process_scripts"]
